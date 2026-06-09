@@ -1,0 +1,29 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# macOS
+.DS_Store
+
+# Stellarium / ephemeris large files
+*.bsp
+*.eph
+
+# Temporary / log files
+*.tmp
+*.log
+
+# Cache folders
+cache/
+logs/
