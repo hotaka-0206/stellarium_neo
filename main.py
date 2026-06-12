@@ -15,17 +15,30 @@ def to_julian_day(dt):
     d = dt.day
     h = dt.hour + dt.minute / 60 + dt.second / 3600
 
+    #3月を年の始まりっぽく扱うとうるう年の処理が楽になるらしい
     if m <= 2:
         y -= 1
         m += 12
-
-    a = y // 100
-    b = 2 - a + a // 4
+    
+    a = y // 100    #世紀　//で割り算の整数部分
+    b = 2 - a + a // 4  #グレゴリオ暦の補正
 
     return int(365.25 * (y + 4716)) + int(30.6001 * (m + 1)) + d + h / 24 + b - 1524.5
 
 
+
+def is_stellarium_running():
+    try:
+        response = requests.get(f"{BASE_URL}/main/status", timeout=2)
+        return response.status_code == 200
+    except requests.exceptions.RequestException:
+        return False
+
+
 def start_stellarium():
+    if is_stellarium_running():
+        return
+    
     subprocess.Popen([STELLARIUM_PATH])
     time.sleep(8)
 
@@ -40,11 +53,9 @@ def focus_object(target):
 
 
 def main():
-    print("=== Stellarium操作プログラム ===")
+    target = input("対象天体 例 Jupiter > ")
 
-    target = input("対象天体 例 Jupiter, Mars, Apophis > ")
-
-    date_text = input("日時 例 2029-04-13 21:00:00 > ")
+    date_text = input("日時 yyyy-mm-dd HH:MM:SS > ")
 
     print("時間系を選んでください")
     print("1: UTC")
@@ -58,13 +69,11 @@ def main():
     else:
         dt = dt.replace(tzinfo=timezone.utc)
 
-    print("Stellariumを起動します。")
     start_stellarium()
 
     set_time(dt)
     focus_object(target)
 
-    print("完了しました。")
 
 
 if __name__ == "__main__":
