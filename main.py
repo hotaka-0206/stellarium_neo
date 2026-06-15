@@ -5,7 +5,10 @@ from datetime import datetime, timezone, timedelta
 
 BASE_URL = "http://localhost:8090/api"
 STELLARIUM_PATH = r"C:\Program Files\Stellarium\stellarium.exe"
-
+TARGET_ALIASES = {
+    "Ceres": "(1) Ceres",
+    "Apophis": "(99942) Apophis",
+}
 
 def to_julian_day(dt):
     dt = dt.astimezone(timezone.utc)
@@ -49,20 +52,30 @@ def set_time(dt):
 
 
 def focus_object(target):
-    requests.post(f"{BASE_URL}/main/focus", data={"target": target, "mode": "zoom"})
+    response = requests.post(
+        f"{BASE_URL}/main/focus",
+        data={"target": target, "mode": "zoom"}
+    )
 
+    print("focus status:", response.status_code)
+    print("focus response:", response.text)
+
+def normalize_target(target):
+    target = target.strip()
+    return TARGET_ALIASES.get(target, target)   #(探すキー，無い場合に返す値)
 
 def main():
-    target = input("対象天体 例 Jupiter > ")
+    target = input("対象天体 形式：天体名 または (小惑星番号)␣ 名前 > ")
+    target = normalize_target(target)
 
-    date_text = input("日時 yyyy-mm-dd HH:MM:SS > ")
-
-    print("時間系を選んでください")
+    date_text = input("日時 形式：yyyymmddHHMMSS > ")
+    
+    print("時間系の番号を入力してください")
     print("1: UTC")
     print("2: JST")
     time_type = input("番号 > ")
 
-    dt = datetime.strptime(date_text, "%Y-%m-%d %H:%M:%S")
+    dt = datetime.strptime(date_text, "%Y%m%d%H%M%S")
 
     if time_type == "2":
         dt = dt.replace(tzinfo=timezone(timedelta(hours=9)))
@@ -72,6 +85,7 @@ def main():
     start_stellarium()
 
     set_time(dt)
+    time.sleep(1)
     focus_object(target)
 
 
