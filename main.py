@@ -48,7 +48,9 @@ def start_stellarium():
 
 def set_time(dt):
     jd = to_julian_day(dt)
-    requests.post(f"{BASE_URL}/main/time", data={"time": jd, "timerate": 0})
+    response = requests.post(f"{BASE_URL}/main/time", data={"time": jd, "timerate": 0})
+    print("time status:", response.status_code)
+    print("time response:", response.text)
 
 
 def focus_object(target):
