@@ -2,6 +2,7 @@ import requests
 import subprocess
 import time
 from datetime import datetime, timezone, timedelta
+from jpl_horizons import fetch_orbital_elements_from_jpl
 
 BASE_URL = "http://localhost:8090/api"
 STELLARIUM_PATH = r"C:\Program Files\Stellarium\stellarium.exe"
@@ -9,6 +10,18 @@ TARGET_ALIASES = {
     "Ceres": "(1) Ceres",
     "Apophis": "(99942) Apophis",
 }
+
+def test_fetch_apophis_elements():
+    elements = fetch_orbital_elements_from_jpl(
+        command="99942;",
+        start_time="2026-06-18",
+        stop_time="2026-06-19",
+        step_size="'1 d'",
+    )
+    print("JPL Horizonsから取得した軌道要素")
+    print("--------------------------------")
+    for key, value in elements.items():
+        print(f"{key}: {value}")
 
 def to_julian_day(dt):
     dt = dt.astimezone(timezone.utc)
@@ -67,6 +80,8 @@ def normalize_target(target):
     return TARGET_ALIASES.get(target, target)   #(探すキー，無い場合に返す値)
 
 def main():
+    test_fetch_apophis_elements()
+
     target = input("対象天体 形式：天体名 または (小惑星番号)␣ 名前 > ")
     target = normalize_target(target)
 
