@@ -1,108 +1,89 @@
-import csv
-import io
+import re
 import requests
+
 
 HORIZONS_API_URL = "https://ssd.jpl.nasa.gov/api/horizons.api"
 
-def fetch_orbital_elements_from_jpl(
-    command: str = "99942;",
-    start_time: str = "2026-06-18",
-    stop_time: str = "2026-06-19",
-    step_size: str = "'1 d'",
-) -> dict:
-    
+
+def fetch_orbital_elements_text(
+    target_id: str,
+    start_time: str = "2026-Jun-18",
+    stop_time: str = "2026-Jun-19",
+    step_size: str = "1 d",
+    center: str = "@sun",
+) -> str:
     params = {
-        "format": "json",
-        "COMMAND": command,
-        "OBJ_DATA": "NO",
-        "MAKE_EPHEM": "YES",
-        "EPHEM_TYPE": "ELEMENTS",
-        "CENTER": "500@10",        # 太陽中心
-        "START_TIME": start_time,
-        "STOP_TIME": stop_time,
-        "STEP_SIZE": step_size,
-        "REF_PLANE": "ECLIPTIC",   # 黄道面基準
-        "REF_SYSTEM": "ICRF",
-        "OUT_UNITS": "AU-D",       # AUと日
         "CSV_FORMAT": "YES",
+        "format": "text",
+        "COMMAND": f"'{target_id}'",
+        "EPHEM_TYPE": "ELEMENTS",
+        "CENTER": f"'{center}'",
+        "START_TIME": f"'{start_time}'",
+        "STOP_TIME": f"'{stop_time}'",
+        "STEP_SIZE": f"'{step_size}'",
+        "OBJ_DATA": "YES",
+        "OUT_UNITS": "AU-D",
     }
 
-    response = requests.get(HORIZONS_API_URL, params=params, timeout=20)
+    response = requests.get(HORIZONS_API_URL, params=params, timeout=30)
     response.raise_for_status()
+    return response.text
 
-    data = response.json()
 
-    if "result" not in data:
-        raise RuntimeError(f"Horizonsの応答にresultがありません: {data}")
+def extract_orbital_elements_from_soe(result_text: str) -> dict:
+    lines = result_text.splitlines()
 
-    result_text = data["result"]
+    try:
+        soe_index = lines.index("$$SOE")
+        eoe_index = lines.index("$$EOE")
+    except ValueError:
+        raise ValueError("JPL Horizonsの $$SOE ～ $$EOE が見つかりませんでした")
 
-    # Horizonsの表は $$SOE と $$EOE の間に出る
-    table_text = _extract_horizons_table(result_text)
-
-    # CSVとして読む
-    fieldnames = [
-    "JDTDB",
-    "Calendar Date (TDB)",
-    "EC",
-    "QR",
-    "IN",
-    "OM",
-    "W",
-    "Tp",
-    "N",
-    "MA",
-    "TA",
-    "A",
-    "AD",
-    "PR",
+    data_lines = [
+        line.strip()
+        for line in lines[soe_index + 1 : eoe_index]
+        if line.strip()
     ]
-    rows = list(csv.DictReader(io.StringIO(table_text), fieldnames=fieldnames))
 
-    if not rows:
-        raise RuntimeError("軌道要素の表を読み取れませんでした。")
+    if not data_lines:
+        raise ValueError("軌道要素のデータ行が見つかりませんでした")
 
-    # 今回は最初の1行だけ使う
-    row = rows[0]
+    values = [v.strip() for v in data_lines[0].split(",")]
 
-    # HorizonsのELEMENTSでよく出る列:
-    # JDTDB, Calendar Date (TDB), EC, QR, IN, OM, W, Tp, N, MA, TA, A, AD, PR
-    elements = {
-        "epoch_jd_tdb": float(row["JDTDB"]),
-        "calendar_date_tdb": row["Calendar Date (TDB)"].strip(),
+    if len(values) < 14:
+        raise ValueError(f"軌道要素の列数が足りません: {len(values)}列")
 
-        # 軌道要素
-        "eccentricity": float(row["EC"]),          # e
-        "perihelion_distance_au": float(row["QR"]), # q
-        "inclination_deg": float(row["IN"]),       # i
-        "ascending_node_deg": float(row["OM"]),    # Ω
-        "argument_of_perihelion_deg": float(row["W"]), # ω
-        "time_of_perihelion_jd_tdb": float(row["Tp"]),
-        "mean_motion_deg_per_day": float(row["N"]),
-        "mean_anomaly_deg": float(row["MA"]),
-        "true_anomaly_deg": float(row["TA"]),
-        "semi_major_axis_au": float(row["A"]),
-        "aphelion_distance_au": float(row["AD"]),
-        "period_days": float(row["PR"]),
+    return {
+        "epoch_jd_tdb": float(values[0]),
+        "calendar_date_tdb": values[1],
+        "eccentricity": float(values[2]),
+        "perihelion_distance_au": float(values[3]),
+        "inclination_deg": float(values[4]),
+        "ascending_node_deg": float(values[5]),
+        "argument_of_perihelion_deg": float(values[6]),
+        "time_of_perihelion_jd_tdb": float(values[7]),
+        "mean_motion_deg_per_day": float(values[8]),
+        "mean_anomaly_deg": float(values[9]),
+        "true_anomaly_deg": float(values[10]),
+        "semi_major_axis_au": float(values[11]),
+        "aphelion_distance_au": float(values[12]),
+        "period_days": float(values[13]),
     }
 
-    return elements
 
+def fetch_orbital_elements_from_jpl(
+    target_id: str,
+    start_time: str = "2026-Jun-18",
+    stop_time: str = "2026-Jun-19",
+    step_size: str = "1 d",
+    center: str = "@sun",
+) -> dict:
+    result_text = fetch_orbital_elements_text(
+        target_id=target_id,
+        start_time=start_time,
+        stop_time=stop_time,
+        step_size=step_size,
+        center=center,
+    )
 
-def _extract_horizons_table(result_text: str) -> str:
-    """
-    Horizons出力の $$SOE ～ $$EOE の間だけ取り出す。
-    """
-    start_marker = "$$SOE"
-    end_marker = "$$EOE"
-
-    if start_marker not in result_text or end_marker not in result_text:
-        raise RuntimeError(
-            "Horizons出力から $$SOE ～ $$EOE の表を見つけられませんでした。\n"
-            "天体指定が曖昧、またはAPI応答がエラーの可能性があります。"
-        )
-
-    table_part = result_text.split(start_marker, 1)[1].split(end_marker, 1)[0]
-    table_part = table_part.strip()
-
-    return table_part
+    return extract_orbital_elements_from_soe(result_text)
