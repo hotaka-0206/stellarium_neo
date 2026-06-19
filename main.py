@@ -2,7 +2,7 @@ import requests
 import subprocess
 import time
 from datetime import datetime, timezone, timedelta
-from jpl_horizons import fetch_orbital_elements_from_jpl
+from get_orbit import fetch_orbital_elements_from_jpl
 
 BASE_URL = "http://localhost:8090/api"
 STELLARIUM_PATH = r"C:\Program Files\Stellarium\stellarium.exe"
