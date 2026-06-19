@@ -11,17 +11,6 @@ TARGET_ALIASES = {
     "Apophis": "(99942) Apophis",
 }
 
-def test_fetch_apophis_elements():
-    elements = fetch_orbital_elements_from_jpl(
-        command="99942;",
-        start_time="2026-06-18",
-        stop_time="2026-06-19",
-        step_size="'1 d'",
-    )
-    print("JPL Horizonsから取得した軌道要素")
-    print("--------------------------------")
-    for key, value in elements.items():
-        print(f"{key}: {value}")
 
 def to_julian_day(dt):
     dt = dt.astimezone(timezone.utc)
@@ -80,30 +69,41 @@ def normalize_target(target):
     return TARGET_ALIASES.get(target, target)   #(探すキー，無い場合に返す値)
 
 def main():
-    test_fetch_apophis_elements()
 
-    target = input("対象天体 形式：天体名 または (小惑星番号)␣ 名前 > ")
-    target = normalize_target(target)
+    target_id = input("JPL Horizonsの天体IDを入力してください > ").strip()
 
-    date_text = input("日時 形式：yyyymmddHHMMSS > ")
+    if target_id.isdigit():
+        target_id = target_id + ";"
+
+    elements = fetch_orbital_elements_from_jpl(target_id)
+
+    print("JPL Horizonsから取得した太陽中心の軌道要素")
+    print("----------------------------------------")
+    for key, value in elements.items():
+        print(f"{key}: {value}")
+
+    # target = input("対象天体 形式：天体名 または (小惑星番号)␣ 名前 > ")
+    # target = normalize_target(target)
+
+    # date_text = input("日時 形式：yyyymmddHHMMSS > ")
     
-    print("時間系の番号を入力してください")
-    print("1: UTC")
-    print("2: JST")
-    time_type = input("番号 > ")
+    # print("時間系の番号を入力してください")
+    # print("1: UTC")
+    # print("2: JST")
+    # time_type = input("番号 > ")
 
-    dt = datetime.strptime(date_text, "%Y%m%d%H%M%S")
+    # dt = datetime.strptime(date_text, "%Y%m%d%H%M%S")
 
-    if time_type == "2":
-        dt = dt.replace(tzinfo=timezone(timedelta(hours=9)))
-    else:
-        dt = dt.replace(tzinfo=timezone.utc)
+    # if time_type == "2":
+    #     dt = dt.replace(tzinfo=timezone(timedelta(hours=9)))
+    # else:
+    #     dt = dt.replace(tzinfo=timezone.utc)
 
     start_stellarium()
 
-    set_time(dt)
+    #set_time(dt)
     time.sleep(1)
-    focus_object(target)
+    #focus_object(target)
 
 
 
