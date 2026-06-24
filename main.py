@@ -3,6 +3,7 @@ import subprocess
 import time
 from datetime import datetime, timezone, timedelta
 from get_orbit import fetch_orbital_elements_from_jpl
+from jpl_to_stel import make_stellarium_section, save_to_stellarium, make_section_id
 
 BASE_URL = "http://localhost:8090/api"
 STELLARIUM_PATH = r"C:\Program Files\Stellarium\stellarium.exe"
@@ -81,7 +82,40 @@ def main():
     print("----------------------------------------")
     for key, value in elements.items():
         print(f"{key}: {value}")
+    
+        # Stellariumで表示する名前を決める
+    display_name = input("Stellariumでの表示名 例: JPL_Apophis > ").strip()
+    if display_name == "":
+        display_name = f"JPL_{target_id.replace(';', '')}"
 
+    # ssystem_minor.ini のセクション名を作る
+    section_id = make_section_id(display_name)
+
+    # JPLの軌道要素をStellarium用の形式に変換
+    section_text = make_stellarium_section(
+        section_id=section_id,
+        display_name=display_name,
+        elements=elements,
+        minor_planet_number=target_id.replace(";", ""),
+    )
+
+    print()
+    print("Stellariumに追加する内容")
+    print("----------------------------------------")
+    print(section_text)
+    print("----------------------------------------")
+
+    answer = input("この内容をStellariumに反映しますか？ y/n > ").strip().lower()
+
+    if answer != "y":
+        print("中止しました。")
+        return
+
+    # ssystem_minor.ini に書き込む
+    save_to_stellarium(section_id, section_text)
+
+
+    ##手動フォーカス------------------------------------------------------
     # target = input("対象天体 形式：天体名 または (小惑星番号)␣ 名前 > ")
     # target = normalize_target(target)
 
@@ -98,6 +132,8 @@ def main():
     #     dt = dt.replace(tzinfo=timezone(timedelta(hours=9)))
     # else:
     #     dt = dt.replace(tzinfo=timezone.utc)
+    ##-------------------------------------------------------------------
+
 
     start_stellarium()
 
@@ -105,6 +141,9 @@ def main():
     time.sleep(1)
     #focus_object(target)
 
+    minor_number = target_id.replace(";", "")
+
+    focus_object(f"({minor_number}) {display_name}")
 
 
 if __name__ == "__main__":
