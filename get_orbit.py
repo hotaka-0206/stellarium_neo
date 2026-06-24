@@ -4,7 +4,7 @@ import requests
 
 HORIZONS_API_URL = "https://ssd.jpl.nasa.gov/api/horizons.api"
 
-
+#APIから取得
 def fetch_orbital_elements_text(
     target_id: str,
     start_time: str = "2026-Jun-18",
@@ -29,7 +29,7 @@ def fetch_orbital_elements_text(
     response.raise_for_status()
     return response.text
 
-
+#パース
 def extract_orbital_elements_from_soe(result_text: str) -> dict:
     lines = result_text.splitlines()
 
@@ -37,7 +37,7 @@ def extract_orbital_elements_from_soe(result_text: str) -> dict:
         soe_index = lines.index("$$SOE")
         eoe_index = lines.index("$$EOE")
     except ValueError:
-        raise ValueError("JPL Horizonsの $$SOE ～ $$EOE が見つかりませんでした")
+        raise ValueError("JPL Horizonsの $$SOE ～ $$EOE が無い")
 
     data_lines = [
         line.strip()
@@ -46,12 +46,12 @@ def extract_orbital_elements_from_soe(result_text: str) -> dict:
     ]
 
     if not data_lines:
-        raise ValueError("軌道要素のデータ行が見つかりませんでした")
+        raise ValueError("軌道要素のデータ行が無い")
 
     values = [v.strip() for v in data_lines[0].split(",")]
 
     if len(values) < 14:
-        raise ValueError(f"軌道要素の列数が足りません: {len(values)}列")
+        raise ValueError(f"軌道要素の列数が足りない: {len(values)}列")
 
     return {
         "epoch_jd_tdb": float(values[0]),
@@ -70,7 +70,7 @@ def extract_orbital_elements_from_soe(result_text: str) -> dict:
         "period_days": float(values[13]),
     }
 
-
+#まとめ
 def fetch_orbital_elements_from_jpl(
     target_id: str,
     start_time: str = "2026-Jun-18",
