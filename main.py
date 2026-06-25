@@ -31,6 +31,9 @@ def to_julian_day(dt):
 
     return int(365.25 * (y + 4716)) + int(30.6001 * (m + 1)) + d + h / 24 + b - 1524.5
 
+def to_horizons_time(dt):
+    dt_utc = dt.astimezone(timezone.utc)
+    return dt_utc.strftime("%Y-%b-%d %H:%M")
 
 def is_stellarium_running():
     try:
@@ -48,11 +51,27 @@ def start_stellarium():
     time.sleep(8)
 
 
-def set_time(dt):
+def set_time(dt, retry=20, interval=1.0):
     jd = to_julian_day(dt)
-    response = requests.post(f"{BASE_URL}/main/time", data={"time": jd, "timerate": 0})
-    print("time status:", response.status_code)
-    print("time response:", response.text)
+    for i in range(retry):
+        response = requests.post(
+            f"{BASE_URL}/main/time",
+            data={
+                "time": jd,
+                "timerate": 0
+            }
+        )
+
+        print(f"time attempt {i + 1}")
+        print("time status:", response.status_code)
+        print("time response:", response.text)
+
+        if response.status_code == 200:
+            return True
+
+        time.sleep(interval)
+
+    return False
 
 
 # def focus_object(target):
@@ -97,7 +116,34 @@ def main():
     if target_id.isdigit():
         target_id = target_id + ";"
 
-    elements = fetch_orbital_elements_from_jpl(target_id)
+    date_text = input("日時 形式：yyyymmddHHMMSS > ")
+
+    print("時間系の番号を入力してください")
+    print("1: UTC")
+    print("2: JST")
+    time_type = input("番号 > ")
+
+    dt = datetime.strptime(date_text, "%Y%m%d%H%M%S")
+
+    if time_type == "2":
+        dt = dt.replace(tzinfo=timezone(timedelta(hours=9)))
+    else:
+        dt = dt.replace(tzinfo=timezone.utc)
+
+    dt_utc = dt.astimezone(timezone.utc)
+
+    start_time = to_horizons_time(dt_utc)
+    stop_time = to_horizons_time(dt_utc + timedelta(minutes=1))
+
+    print("JPL取得開始時刻:", start_time)
+    print("JPL取得終了時刻:", stop_time)
+
+    elements = fetch_orbital_elements_from_jpl(
+        target_id=target_id,
+        start_time=start_time,
+        stop_time=stop_time,
+        step_size="1 m",
+    )
 
     print("JPL Horizonsから取得した太陽中心の軌道要素")
     print("----------------------------------------")
@@ -157,13 +203,11 @@ def main():
 
 
     start_stellarium()
-
-    #set_time(dt)
+    set_time(dt)
     time.sleep(1)
     #focus_object(target)
 
     minor_number = target_id.replace(";", "")
-
     focus_object(f"({minor_number}) {display_name}")
 
 
