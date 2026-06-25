@@ -32,7 +32,6 @@ def to_julian_day(dt):
     return int(365.25 * (y + 4716)) + int(30.6001 * (m + 1)) + d + h / 24 + b - 1524.5
 
 
-
 def is_stellarium_running():
     try:
         response = requests.get(f"{BASE_URL}/main/status", timeout=2)
@@ -56,18 +55,40 @@ def set_time(dt):
     print("time response:", response.text)
 
 
-def focus_object(target):
-    response = requests.post(
-        f"{BASE_URL}/main/focus",
-        data={"target": target, "mode": "zoom"}
-    )
+# def focus_object(target):
+#     response = requests.post(
+#         f"{BASE_URL}/main/focus",
+#         data={"target": target, "mode": "zoom"}
+#     )
+#     print("focus status:", response.status_code)
+#     print("focus response:", response.text)
 
-    print("focus status:", response.status_code)
-    print("focus response:", response.text)
+
+def focus_object(target, retry=20, interval=1.0):
+    url = "http://localhost:8090/api/main/focus"
+
+    for i in range(retry):
+        response = requests.post(url, data={
+            "target": target,
+            "mode": "zoom"
+        })
+
+        print(f"focus attempt {i + 1}")
+        print("focus status:", response.status_code)
+        print("focus response:", response.text)
+
+        if response.status_code == 200:
+            return True
+
+        time.sleep(interval)
+
+    return False
+
 
 def normalize_target(target):
     target = target.strip()
     return TARGET_ALIASES.get(target, target)   #(探すキー，無い場合に返す値)
+
 
 def main():
 
