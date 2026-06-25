@@ -7,7 +7,6 @@ from get_orbit import fetch_orbital_elements_from_jpl
 
 
 # Stellariumの小惑星データ保存先
-# 例:
 # C:\Users\huraf\AppData\Roaming\Stellarium\data\ssystem_minor.ini
 SSYSTEM_MINOR_PATH = Path(os.environ["APPDATA"]) / "Stellarium" / "data" / "ssystem_minor.ini"
 
@@ -88,59 +87,3 @@ def make_section_id(display_name):
         .replace("(", "")
         .replace(")", "")
     )
-
-
-def main():
-    target_id = input("JPL Horizonsの天体IDを入力してください > ").strip()
-
-    # Horizonsでは小惑星番号に ; を付けると小惑星として扱いやすい
-    jpl_target_id = target_id
-    if jpl_target_id.isdigit():
-        jpl_target_id = jpl_target_id + ";"
-
-    display_name = input("Stellariumでの表示名 例: JPL_Apophis > ").strip()
-    if display_name == "":
-        display_name = f"JPL_{target_id}"
-
-    section_id = make_section_id(display_name)
-
-    print("JPL Horizonsから軌道要素を取得中...")
-    elements = fetch_orbital_elements_from_jpl(jpl_target_id)
-
-    print()
-    print("取得した軌道要素")
-    print("----------------------------------------")
-    for key, value in elements.items():
-        print(f"{key}: {value}")
-
-    section_text = make_stellarium_section(
-        section_id=section_id,
-        display_name=display_name,
-        elements=elements,
-        minor_planet_number=target_id,
-    )
-
-    print()
-    print("Stellariumに追加する内容")
-    print("----------------------------------------")
-    print(section_text)
-    print("----------------------------------------")
-
-    print("書き込み先:")
-    print(SSYSTEM_MINOR_PATH)
-    print()
-
-    answer = input("この内容をStellariumに反映しますか？ y/n > ").strip().lower()
-
-    if answer == "y":
-        save_to_stellarium(section_id, section_text)
-        print()
-        print("反映しました。")
-        print("Stellariumを完全に終了してから、もう一度起動してください。")
-        print(f"起動後、検索で {display_name} を探してください。")
-    else:
-        print("中止しました。ファイルには書き込んでいません。")
-
-
-if __name__ == "__main__":
-    main()
