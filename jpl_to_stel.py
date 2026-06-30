@@ -3,7 +3,6 @@ import os
 import re
 import shutil
 
-from get_orbit import fetch_orbital_elements_from_jpl
 
 
 # Stellariumの小惑星データ保存先

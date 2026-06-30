@@ -74,17 +74,8 @@ def set_time(dt, retry=20, interval=1.0):
     return False
 
 
-# def focus_object(target):
-#     response = requests.post(
-#         f"{BASE_URL}/main/focus",
-#         data={"target": target, "mode": "zoom"}
-#     )
-#     print("focus status:", response.status_code)
-#     print("focus response:", response.text)
-
-
 def focus_object(target, retry=20, interval=1.0):
-    url = "http://localhost:8090/api/main/focus"
+    url = f"{BASE_URL}/main/focus"
 
     for i in range(retry):
         response = requests.post(url, data={
@@ -150,7 +141,7 @@ def main():
     for key, value in elements.items():
         print(f"{key}: {value}")
     
-        # Stellariumで表示する名前を決める
+    # Stellariumで表示する名前を決める
     display_name = input("Stellariumでの表示名 例: JPL_Apophis > ").strip()
     if display_name == "":
         display_name = f"JPL_{target_id.replace(';', '')}"
@@ -180,27 +171,6 @@ def main():
 
     # ssystem_minor.ini に書き込む
     save_to_stellarium(section_id, section_text)
-
-
-    ##手動フォーカス------------------------------------------------------
-    # target = input("対象天体 形式：天体名 または (小惑星番号)␣ 名前 > ")
-    # target = normalize_target(target)
-
-    # date_text = input("日時 形式：yyyymmddHHMMSS > ")
-    
-    # print("時間系の番号を入力してください")
-    # print("1: UTC")
-    # print("2: JST")
-    # time_type = input("番号 > ")
-
-    # dt = datetime.strptime(date_text, "%Y%m%d%H%M%S")
-
-    # if time_type == "2":
-    #     dt = dt.replace(tzinfo=timezone(timedelta(hours=9)))
-    # else:
-    #     dt = dt.replace(tzinfo=timezone.utc)
-    ##-------------------------------------------------------------------
-
 
     start_stellarium()
     set_time(dt)

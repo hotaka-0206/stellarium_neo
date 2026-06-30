@@ -1,4 +1,3 @@
-import re
 import requests
 
 
@@ -7,9 +6,9 @@ HORIZONS_API_URL = "https://ssd.jpl.nasa.gov/api/horizons.api"
 #APIから取得
 def fetch_orbital_elements_text(
     target_id: str,
-    start_time: str = "2026-Jun-18",
-    stop_time: str = "2026-Jun-19",
-    step_size: str = "1 d",
+    start_time: str,
+    stop_time: str,
+    step_size: str,
     center: str = "@sun",
 ) -> str:
     params = {
@@ -73,9 +72,9 @@ def extract_orbital_elements_from_soe(result_text: str) -> dict:
 #まとめ
 def fetch_orbital_elements_from_jpl(
     target_id: str,
-    start_time: str = "2026-Jun-18",
-    stop_time: str = "2026-Jun-19",
-    step_size: str = "1 d",
+    start_time: str,
+    stop_time: str,
+    step_size: str,
     center: str = "@sun",
 ) -> dict:
     result_text = fetch_orbital_elements_text(
