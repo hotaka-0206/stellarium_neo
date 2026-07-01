@@ -3,7 +3,12 @@ import subprocess
 import time
 from datetime import datetime, timezone, timedelta
 from get_orbit import fetch_orbital_elements_from_jpl
-from jpl_to_stel import make_stellarium_section, save_to_stellarium, make_section_id
+from jpl_to_stel import (
+    make_stellarium_section,
+    save_to_stellarium,
+    make_section_id,
+    find_object_by_minor_planet_number,
+)
 
 BASE_URL = "http://localhost:8090/api"
 STELLARIUM_PATH = r"C:\Program Files\Stellarium\stellarium.exe"
@@ -107,6 +112,53 @@ def main():
     if target_id.isdigit():
         target_id = target_id + ";"
 
+    minor_number = target_id.replace(";", "")
+
+    # 天体番号で既に登録されているか確認する
+    existing_object = find_object_by_minor_planet_number(minor_number)
+
+    should_fetch_jpl = True
+    should_save = True
+    section_id = None
+
+    minor_number = target_id.replace(";", "")
+
+    existing_object = find_object_by_minor_planet_number(minor_number)
+
+    should_fetch_jpl = True
+    should_save = True
+    section_id = None
+    display_name = None
+
+    if existing_object is not None:
+        section_id = existing_object["section_id"]
+        display_name = existing_object["name"]
+
+        print(f"天体番号 {minor_number} は既に [{section_id}] として登録されています。")
+        print(f"表示名: {display_name}")
+
+        answer = input("JPLの最新データで更新しますか？ y/n > ").strip().lower()
+
+        if answer == "y":
+            print("JPLから最新データを取得して更新します。")
+            should_fetch_jpl = True
+            should_save = True
+        else:
+            print("更新せず、既存データのまま表示します。")
+            should_fetch_jpl = False
+            should_save = False
+
+    else:
+        print(f"天体番号 {minor_number} はまだ登録されていません。")
+        answer = input("新しく追加しますか？ y/n > ").strip().lower()
+
+        if answer != "y":
+            print("追加せずに中止しました。")
+            return
+
+        should_fetch_jpl = True
+        should_save = True
+
     date_text = input("日時 形式：yyyymmddHHMMSS > ")
 
     print("時間系の番号を入力してください")
@@ -121,63 +173,56 @@ def main():
     else:
         dt = dt.replace(tzinfo=timezone.utc)
 
-    dt_utc = dt.astimezone(timezone.utc)
+    if should_fetch_jpl:
+        dt_utc = dt.astimezone(timezone.utc)
 
-    start_time = to_horizons_time(dt_utc)
-    stop_time = to_horizons_time(dt_utc + timedelta(minutes=1))
+        start_time = to_horizons_time(dt_utc)
+        stop_time = to_horizons_time(dt_utc + timedelta(minutes=1))
 
-    print("JPL取得開始時刻:", start_time)
-    print("JPL取得終了時刻:", stop_time)
+        print("JPL取得開始時刻:", start_time)
+        print("JPL取得終了時刻:", stop_time)
 
-    elements = fetch_orbital_elements_from_jpl(
-        target_id=target_id,
-        start_time=start_time,
-        stop_time=stop_time,
-        step_size="1 m",
-    )
+        elements = fetch_orbital_elements_from_jpl(
+            target_id=target_id,
+            start_time=start_time,
+            stop_time=stop_time,
+            step_size="1 m",
+        )
 
-    print("JPL Horizonsから取得した太陽中心の軌道要素")
-    print("----------------------------------------")
-    for key, value in elements.items():
-        print(f"{key}: {value}")
-    
-    # Stellariumで表示する名前を決める
-    display_name = input("Stellariumでの表示名 例: JPL_Apophis > ").strip()
-    if display_name == "":
-        display_name = f"JPL_{target_id.replace(';', '')}"
+        print("JPL Horizonsから取得した太陽中心の軌道要素")
+        print("----------------------------------------")
+        for key, value in elements.items():
+            print(f"{key}: {value}")
 
-    # ssystem_minor.ini のセクション名を作る
-    section_id = make_section_id(display_name)
+        # Stellariumで表示する名前を決める
+        display_name = input("Stellariumでの表示名 例: JPL_Apophis > ").strip()
+        if display_name == "":
+            display_name = f"JPL_{minor_number}"
 
-    # JPLの軌道要素をStellarium用の形式に変換
-    section_text = make_stellarium_section(
-        section_id=section_id,
-        display_name=display_name,
-        elements=elements,
-        minor_planet_number=target_id.replace(";", ""),
-    )
+        if section_id is None:
+            section_id = make_section_id(display_name)
 
-    print()
-    print("Stellariumに追加する内容")
-    print("----------------------------------------")
-    print(section_text)
-    print("----------------------------------------")
+        # JPLの軌道要素をStellarium用の形式に変換
+        section_text = make_stellarium_section(
+            section_id=section_id,
+            display_name=display_name,
+            elements=elements,
+            minor_planet_number=minor_number,
+        )
 
-    answer = input("この内容をStellariumに反映しますか？ y/n > ").strip().lower()
+        print()
+        print("Stellariumに書き込む内容")
+        print("----------------------------------------")
+        print(section_text)
+        print("----------------------------------------")
 
-    if answer != "y":
-        print("中止しました。")
-        return
-
-    # ssystem_minor.ini に書き込む
-    save_to_stellarium(section_id, section_text)
+        if should_save:
+            save_to_stellarium(section_id, section_text)
 
     start_stellarium()
     set_time(dt)
     time.sleep(1)
-    #focus_object(target)
 
-    minor_number = target_id.replace(";", "")
     focus_object(f"({minor_number}) {display_name}")
 
 

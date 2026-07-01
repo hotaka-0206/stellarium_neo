@@ -36,6 +36,49 @@ type                           = asteroid
 """
 
 
+def find_object_by_minor_planet_number(minor_planet_number):
+    """
+    ssystem_minor.ini の中から、
+    指定した minor_planet_number を持つ天体を探す。
+
+    見つかった場合:
+        {
+            "section_id": セクションID,
+            "name": 表示名
+        }
+    見つからない場合:
+        None
+    """
+
+    if not SSYSTEM_MINOR_PATH.exists():
+        return None
+
+    original_text = SSYSTEM_MINOR_PATH.read_text(encoding="utf-8", errors="ignore")
+
+    pattern = r"\[([^\]]+)\]\n(.*?)(?=\n\[|\Z)"
+
+    for match in re.finditer(pattern, original_text, re.DOTALL):
+        section_id = match.group(1)
+        section_body = match.group(2)
+
+        number_pattern = rf"minor_planet_number\s*=\s*{re.escape(str(minor_planet_number))}\b"
+
+        if re.search(number_pattern, section_body):
+            name_match = re.search(r"^name\s*=\s*(.+)$", section_body, re.MULTILINE)
+
+            if name_match:
+                name = name_match.group(1).strip()
+            else:
+                name = f"JPL_{minor_planet_number}"
+
+            return {
+                "section_id": section_id,
+                "name": name,
+            }
+
+    return None
+
+
 def save_to_stellarium(section_id, section_text):
     """
     ssystem_minor.ini に軌道要素を書き込む。
