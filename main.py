@@ -99,6 +99,27 @@ def focus_object(target, retry=20, interval=1.0):
 
     return False
 
+def set_fov_deg(fov_deg, retry=10, interval=0.5):
+    url = f"{BASE_URL}/main/fov"
+
+    for i in range(retry):
+        response = requests.post(
+            url,
+            data={
+                "fov": fov_deg
+            }
+        )
+
+        print(f"fov attempt {i + 1}")
+        print("fov status:", response.status_code)
+        print("fov response:", response.text)
+
+        if response.status_code == 200:
+            return True
+
+        time.sleep(interval)
+
+    return False
 
 def normalize_target(target):
     target = target.strip()
@@ -225,6 +246,8 @@ def main():
 
     focus_object(f"({minor_number}) {display_name}")
 
+    time.sleep(1)
+    set_fov_deg(30)#fovの指定
 
 if __name__ == "__main__":
     main()
