@@ -1,3 +1,6 @@
+# Edited by S.U 2026.7.15
+# Macでも動くようにした。STELLARIUM_PATHを関数にした。
+
 import requests
 import subprocess
 import time
@@ -9,14 +12,24 @@ from jpl_to_stel import (
     make_section_id,
     find_object_by_minor_planet_number,
 )
+import platform
 
 BASE_URL = "http://localhost:8090/api"
-STELLARIUM_PATH = r"C:\Program Files\Stellarium\stellarium.exe"
+#STELLARIUM_PATH = r"C:\Program Files\Stellarium\stellarium.exe"
+
+
+def get_stellarium_exe_path():
+    if platform.system() == "Windows":
+        return r"C:\Program Files\Stellarium\stellarium.exe"
+    elif platform.system() == "Darwin":
+        return "/Applications/Stellarium.app/Contents/MacOS/Stellarium"
+    return "stellarium" # パスが通っていればコマンド名だけで起動可能
+
+STELLARIUM_PATH = get_stellarium_exe_path()
 TARGET_ALIASES = {
     "Ceres": "(1) Ceres",
     "Apophis": "(99942) Apophis",
 }
-
 
 def to_julian_day(dt):
     dt = dt.astimezone(timezone.utc)

@@ -1,14 +1,23 @@
+# Edited to S.U 2026.7.15
+# Macでも動くようにした。get_ssystem_minor_path関数を加えてStellaliumアプリの保存先を自動取得
 from pathlib import Path
 import os
 import re
 import shutil
+import platform  # これを追加
 
 
+def get_ssystem_minor_path():
+    home = Path.home()
+    if platform.system() == "Windows":
+        appdata = Path(os.environ.get("APPDATA", home / "AppData" / "Roaming"))
+        return appdata / "Stellarium" / "data" / "ssystem_minor.ini"
+    elif platform.system() == "Darwin":
+        return home / "Library" / "Application Support" / "Stellarium" / "data" / "ssystem_minor.ini"
+    else:
+        return home / ".local" / "share" / "Stellarium" / "data" / "ssystem_minor.ini"
 
-# Stellariumの小惑星データ保存先
-# C:\Users\huraf\AppData\Roaming\Stellarium\data\ssystem_minor.ini
-SSYSTEM_MINOR_PATH = Path(os.environ["APPDATA"]) / "Stellarium" / "data" / "ssystem_minor.ini"
-
+SSYSTEM_MINOR_PATH = get_ssystem_minor_path()
 
 def make_stellarium_section(section_id, display_name, elements, minor_planet_number):
     """
