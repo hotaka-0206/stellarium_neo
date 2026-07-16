@@ -1,35 +1,31 @@
-# Edited by S.U 2026.7.15
-# Macでも動くようにした。STELLARIUM_PATHを関数にした。
-
-import requests
+import platform
 import subprocess
 import time
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
+
+import requests
+
 from get_orbit import fetch_orbital_elements_from_jpl
 from jpl_to_stel import (
+    find_jpl_object_by_minor_planet_number,
+    find_standard_object_by_minor_planet_number,
     make_stellarium_section,
     save_to_stellarium,
-    make_section_id,
-    find_object_by_minor_planet_number,
 )
-import platform
 
 BASE_URL = "http://localhost:8090/api"
-#STELLARIUM_PATH = r"C:\Program Files\Stellarium\stellarium.exe"
 
 
 def get_stellarium_exe_path():
     if platform.system() == "Windows":
         return r"C:\Program Files\Stellarium\stellarium.exe"
-    elif platform.system() == "Darwin":
+    if platform.system() == "Darwin":
         return "/Applications/Stellarium.app/Contents/MacOS/Stellarium"
-    return "stellarium" # パスが通っていればコマンド名だけで起動可能
+    return "stellarium"
+
 
 STELLARIUM_PATH = get_stellarium_exe_path()
-TARGET_ALIASES = {
-    "Ceres": "(1) Ceres",
-    "Apophis": "(99942) Apophis",
-}
+
 
 def to_julian_day(dt):
     dt = dt.astimezone(timezone.utc)
@@ -39,19 +35,26 @@ def to_julian_day(dt):
     d = dt.day
     h = dt.hour + dt.minute / 60 + dt.second / 3600
 
-    #3月を年の始まりっぽく扱うとうるう年の処理が楽になるらしい
     if m <= 2:
         y -= 1
         m += 12
-    
-    a = y // 100    #世紀　//で割り算の整数部分
-    b = 2 - a + a // 4  #グレゴリオ暦の補正
 
-    return int(365.25 * (y + 4716)) + int(30.6001 * (m + 1)) + d + h / 24 + b - 1524.5
+    a = y // 100
+    b = 2 - a + a // 4
+
+    return (
+        int(365.25 * (y + 4716))
+        + int(30.6001 * (m + 1))
+        + d
+        + h / 24
+        + b
+        - 1524.5
+    )
+
 
 def to_horizons_time(dt):
-    dt_utc = dt.astimezone(timezone.utc)
-    return dt_utc.strftime("%Y-%b-%d %H:%M")
+    return dt.astimezone(timezone.utc).strftime("%Y-%b-%d %H:%M")
+
 
 def is_stellarium_running():
     try:
@@ -61,30 +64,63 @@ def is_stellarium_running():
         return False
 
 
+def stop_stellarium():
+    if not is_stellarium_running():
+        return
+
+    if platform.system() == "Windows":
+        subprocess.run(
+            ["taskkill", "/IM", "stellarium.exe", "/F"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+    else:
+        subprocess.run(
+            ["pkill", "-f", STELLARIUM_PATH],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+
+    for _ in range(20):
+        if not is_stellarium_running():
+            return
+        time.sleep(0.5)
+
+
 def start_stellarium():
     if is_stellarium_running():
         return
-    
+
     subprocess.Popen([STELLARIUM_PATH])
-    time.sleep(8)
+
+    for _ in range(40):
+        if is_stellarium_running():
+            return
+        time.sleep(0.5)
+
+
+def restart_stellarium():
+    stop_stellarium()
+    start_stellarium()
 
 
 def set_time(dt, retry=20, interval=1.0):
     jd = to_julian_day(dt)
+
     for i in range(retry):
         response = requests.post(
             f"{BASE_URL}/main/time",
-            data={
-                "time": jd,
-                "timerate": 0
-            }
+            data={"time": jd, "timerate": 0},
+            timeout=5,
         )
 
         print(f"time attempt {i + 1}")
         print("time status:", response.status_code)
         print("time response:", response.text)
 
-        if response.status_code == 200:
+        if response.status_code == 200 and response.text.strip().lower() != "false":
             return True
 
         time.sleep(interval)
@@ -93,128 +129,101 @@ def set_time(dt, retry=20, interval=1.0):
 
 
 def focus_object(target, retry=20, interval=1.0):
-    url = f"{BASE_URL}/main/focus"
-
     for i in range(retry):
-        response = requests.post(url, data={
-            "target": target,
-            "mode": "zoom"
-        })
+        response = requests.post(
+            f"{BASE_URL}/main/focus",
+            data={"target": target, "mode": "zoom"},
+            timeout=5,
+        )
 
         print(f"focus attempt {i + 1}")
         print("focus status:", response.status_code)
         print("focus response:", response.text)
 
-        if response.status_code == 200:
+        if response.status_code == 200 and response.text.strip().lower() != "false":
             return True
 
         time.sleep(interval)
 
     return False
 
-def set_fov_deg(fov_deg, retry=10, interval=0.5):
-    url = f"{BASE_URL}/main/fov"
 
+def set_fov_deg(fov_deg, retry=10, interval=0.5):
     for i in range(retry):
         response = requests.post(
-            url,
-            data={
-                "fov": fov_deg
-            }
+            f"{BASE_URL}/main/fov",
+            data={"fov": fov_deg},
+            timeout=5,
         )
 
         print(f"fov attempt {i + 1}")
         print("fov status:", response.status_code)
         print("fov response:", response.text)
 
-        if response.status_code == 200:
+        if response.status_code == 200 and response.text.strip().lower() != "false":
             return True
 
         time.sleep(interval)
 
     return False
 
-def normalize_target(target):
-    target = target.strip()
-    return TARGET_ALIASES.get(target, target)   #(探すキー，無い場合に返す値)
 
-
-def main():
-
-    target_id = input("JPL Horizonsの天体IDを入力してください > ").strip()
-
-    if target_id.isdigit():
-        target_id = target_id + ";"
-
-    minor_number = target_id.replace(";", "")
-
-    # 天体番号で既に登録されているか確認する
-    existing_object = find_object_by_minor_planet_number(minor_number)
-
-    should_fetch_jpl = True
-    should_save = True
-    section_id = None
-
-    minor_number = target_id.replace(";", "")
-
-    existing_object = find_object_by_minor_planet_number(minor_number)
-
-    should_fetch_jpl = True
-    should_save = True
-    section_id = None
-    display_name = None
-
-    if existing_object is not None:
-        section_id = existing_object["section_id"]
-        display_name = existing_object["name"]
-
-        print(f"天体番号 {minor_number} は既に [{section_id}] として登録されています。")
-        print(f"表示名: {display_name}")
-
-        answer = input("JPLの最新データで更新しますか？ y/n > ").strip().lower()
-
-        if answer == "y":
-            print("JPLから最新データを取得して更新します。")
-            should_fetch_jpl = True
-            should_save = True
-        else:
-            print("更新せず、既存データのまま表示します。")
-            should_fetch_jpl = False
-            should_save = False
-
-    else:
-        print(f"天体番号 {minor_number} はまだ登録されていません。")
-        answer = input("新しく追加しますか？ y/n > ").strip().lower()
-
-        if answer != "y":
-            print("追加せずに中止しました。")
-            return
-
-        should_fetch_jpl = True
-        should_save = True
-
-    date_text = input("日時 形式：yyyymmddHHMMSS > ")
+def input_datetime():
+    date_text = input("日時 形式：yyyymmddHHMMSS > ").strip()
 
     print("時間系の番号を入力してください")
     print("1: UTC")
     print("2: JST")
-    time_type = input("番号 > ")
+    time_type = input("番号 > ").strip()
 
     dt = datetime.strptime(date_text, "%Y%m%d%H%M%S")
 
     if time_type == "2":
-        dt = dt.replace(tzinfo=timezone(timedelta(hours=9)))
+        return dt.replace(tzinfo=timezone(timedelta(hours=9)))
+
+    return dt.replace(tzinfo=timezone.utc)
+
+
+def prepare_jpl_target(dt):
+    target_id = input("JPL Horizonsの天体IDを入力してください > ").strip()
+
+    if target_id.isdigit():
+        target_id += ";"
+
+    minor_number = target_id.replace(";", "")
+    existing_object = find_jpl_object_by_minor_planet_number(minor_number)
+    section_id = f"jpl_{minor_number}"
+    old_section_id = None
+    display_name = None
+    should_fetch_jpl = True
+
+    if existing_object is not None:
+        old_section_id = existing_object["section_id"]
+        display_name = existing_object["name"]
+
+        print(
+            f"天体番号 {minor_number} は既に "
+            f"[{old_section_id}] として登録されています。"
+        )
+        print(f"表示名: {display_name}")
+
+        answer = input("JPLの最新データで更新しますか？ y/n > ").strip().lower()
+
+        if answer != "y":
+            should_fetch_jpl = False
     else:
-        dt = dt.replace(tzinfo=timezone.utc)
+        print(f"天体番号 {minor_number} のJPL版はまだ登録されていません。")
+        answer = input("JPLデータを新しく追加しますか？ y/n > ").strip().lower()
+
+        if answer != "y":
+            return None, False
+
+    catalog_changed = False
 
     if should_fetch_jpl:
         dt_utc = dt.astimezone(timezone.utc)
-
         start_time = to_horizons_time(dt_utc)
         stop_time = to_horizons_time(dt_utc + timedelta(minutes=1))
-
-        print("JPL取得開始時刻:", start_time)
-        print("JPL取得終了時刻:", stop_time)
 
         elements = fetch_orbital_elements_from_jpl(
             target_id=target_id,
@@ -223,20 +232,14 @@ def main():
             step_size="1 m",
         )
 
-        print("JPL Horizonsから取得した太陽中心の軌道要素")
-        print("----------------------------------------")
-        for key, value in elements.items():
-            print(f"{key}: {value}")
+        if display_name is None:
+            display_name = input(
+                "Stellariumでの表示名 例: JPL_Apophis > "
+            ).strip()
 
-        # Stellariumで表示する名前を決める
-        display_name = input("Stellariumでの表示名 例: JPL_Apophis > ").strip()
-        if display_name == "":
-            display_name = f"JPL_{minor_number}"
+            if display_name == "":
+                display_name = f"JPL_{minor_number}"
 
-        if section_id is None:
-            section_id = make_section_id(display_name)
-
-        # JPLの軌道要素をStellarium用の形式に変換
         section_text = make_stellarium_section(
             section_id=section_id,
             display_name=display_name,
@@ -244,23 +247,76 @@ def main():
             minor_planet_number=minor_number,
         )
 
-        print()
-        print("Stellariumに書き込む内容")
-        print("----------------------------------------")
-        print(section_text)
-        print("----------------------------------------")
+        save_to_stellarium(
+            section_id=section_id,
+            section_text=section_text,
+            old_section_id=old_section_id,
+        )
+        catalog_changed = True
 
-        if should_save:
-            save_to_stellarium(section_id, section_text)
+    focus_name = f"({minor_number}) {display_name}"
+    print(f"JPLのフォーカス対象: {focus_name}")
+    return focus_name, catalog_changed
 
-    start_stellarium()
-    set_time(dt)
+
+def prepare_standard_target():
+    target = input(
+        "Stellarium標準の天体名または天体番号を入力してください > "
+    ).strip()
+
+    if not target.isdigit():
+        return target
+
+    standard_object = find_standard_object_by_minor_planet_number(target)
+
+    if standard_object is None:
+        print(f"天体番号 {target} のStellarium標準版が見つかりません。")
+        return None
+
+    focus_name = f"({target}) {standard_object['name']}"
+    print(f"Stellarium標準のフォーカス対象: {focus_name}")
+    return focus_name
+
+
+def main():
+    print("表示する天体データを選択してください")
+    print("1: JPL")
+    print("2: Stellarium標準")
+    source_type = input("番号 > ").strip()
+
+    if source_type not in {"1", "2"}:
+        print("1または2を入力してください。")
+        return
+
+    dt = input_datetime()
+    catalog_changed = False
+
+    if source_type == "1":
+        focus_target, catalog_changed = prepare_jpl_target(dt)
+    else:
+        focus_target = prepare_standard_target()
+
+    if focus_target is None:
+        return
+
+    if catalog_changed:
+        restart_stellarium()
+    else:
+        start_stellarium()
+
+    if not set_time(dt):
+        print("時刻設定に失敗しました。")
+        return
+
     time.sleep(1)
 
-    focus_object(f"({minor_number}) {display_name}")
+    if not focus_object(focus_target):
+        print(f"{focus_target} へのフォーカスに失敗しました。")
+        return
 
     time.sleep(1)
-    set_fov_deg(30)#fovの指定
+    set_fov_deg(30)
+
 
 if __name__ == "__main__":
     main()

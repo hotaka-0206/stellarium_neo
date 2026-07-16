@@ -1,30 +1,34 @@
-# Edited to S.U 2026.7.15
-# Macでも動くようにした。get_ssystem_minor_path関数を加えてStellaliumアプリの保存先を自動取得
-from pathlib import Path
 import os
+import platform
 import re
 import shutil
-import platform  # これを追加
+from pathlib import Path
 
 
 def get_ssystem_minor_path():
     home = Path.home()
+
     if platform.system() == "Windows":
         appdata = Path(os.environ.get("APPDATA", home / "AppData" / "Roaming"))
         return appdata / "Stellarium" / "data" / "ssystem_minor.ini"
-    elif platform.system() == "Darwin":
-        return home / "Library" / "Application Support" / "Stellarium" / "data" / "ssystem_minor.ini"
-    else:
-        return home / ".local" / "share" / "Stellarium" / "data" / "ssystem_minor.ini"
+
+    if platform.system() == "Darwin":
+        return (
+            home
+            / "Library"
+            / "Application Support"
+            / "Stellarium"
+            / "data"
+            / "ssystem_minor.ini"
+        )
+
+    return home / ".local" / "share" / "Stellarium" / "data" / "ssystem_minor.ini"
+
 
 SSYSTEM_MINOR_PATH = get_ssystem_minor_path()
 
-def make_stellarium_section(section_id, display_name, elements, minor_planet_number):
-    """
-    JPL Horizonsから取得した軌道要素を
-    Stellariumの ssystem_minor.ini 用の小惑星形式に変換する
-    """
 
+def make_stellarium_section(section_id, display_name, elements, minor_planet_number):
     return f"""
 [{section_id}]
 absolute_magnitude             = 19.7
@@ -45,96 +49,109 @@ type                           = asteroid
 """
 
 
-def find_object_by_minor_planet_number(minor_planet_number):
-    """
-    ssystem_minor.ini の中から、
-    指定した minor_planet_number を持つ天体を探す。
-
-    見つかった場合:
-        {
-            "section_id": セクションID,
-            "name": 表示名
-        }
-    見つからない場合:
-        None
-    """
-
+def read_objects():
     if not SSYSTEM_MINOR_PATH.exists():
-        return None
+        return []
 
-    original_text = SSYSTEM_MINOR_PATH.read_text(encoding="utf-8", errors="ignore")
+    text = SSYSTEM_MINOR_PATH.read_text(encoding="utf-8", errors="ignore")
+    pattern = r"\[([^\]]+)\]\r?\n(.*?)(?=\r?\n\[|\Z)"
+    objects = []
 
-    pattern = r"\[([^\]]+)\]\n(.*?)(?=\n\[|\Z)"
-
-    for match in re.finditer(pattern, original_text, re.DOTALL):
-        section_id = match.group(1)
+    for match in re.finditer(pattern, text, re.DOTALL):
+        section_id = match.group(1).strip()
         section_body = match.group(2)
 
-        number_pattern = rf"minor_planet_number\s*=\s*{re.escape(str(minor_planet_number))}\b"
+        number_match = re.search(
+            r"^minor_planet_number\s*=\s*(.+)$",
+            section_body,
+            re.MULTILINE,
+        )
+        name_match = re.search(
+            r"^name\s*=\s*(.+)$",
+            section_body,
+            re.MULTILINE,
+        )
 
-        if re.search(number_pattern, section_body):
-            name_match = re.search(r"^name\s*=\s*(.+)$", section_body, re.MULTILINE)
+        if number_match is None or name_match is None:
+            continue
 
-            if name_match:
-                name = name_match.group(1).strip()
-            else:
-                name = f"JPL_{minor_planet_number}"
-
-            return {
+        objects.append(
+            {
                 "section_id": section_id,
-                "name": name,
+                "minor_planet_number": number_match.group(1).strip(),
+                "name": name_match.group(1).strip(),
             }
+        )
+
+    return objects
+
+
+def is_jpl_object(obj):
+    return obj["section_id"].lower().startswith("jpl_")
+
+
+def find_jpl_object_by_minor_planet_number(minor_planet_number):
+    number = str(minor_planet_number).strip()
+
+    for obj in read_objects():
+        if obj["minor_planet_number"] == number and is_jpl_object(obj):
+            return obj
 
     return None
 
 
-def save_to_stellarium(section_id, section_text):
-    """
-    ssystem_minor.ini に軌道要素を書き込む。
-    同じ section_id が既にあれば置き換える。
-    なければ末尾に追加する。
-    """
+def find_standard_object_by_minor_planet_number(minor_planet_number):
+    number = str(minor_planet_number).strip()
 
+    for obj in read_objects():
+        is_jpl_section = obj["section_id"].lower().startswith("jpl_")
+        is_jpl_name = obj["name"].lower().startswith("jpl_")
+
+        if (
+            obj["minor_planet_number"] == number
+            and not is_jpl_section
+            and not is_jpl_name
+        ):
+            return obj
+
+    return None
+
+
+def remove_section(text, section_id):
+    pattern = rf"\r?\n?\[{re.escape(section_id)}\]\r?\n.*?(?=\r?\n\[|\Z)"
+    return re.sub(pattern, "\n", text, flags=re.DOTALL)
+
+
+def save_to_stellarium(section_id, section_text, old_section_id=None):
     SSYSTEM_MINOR_PATH.parent.mkdir(parents=True, exist_ok=True)
 
     if SSYSTEM_MINOR_PATH.exists():
-        original_text = SSYSTEM_MINOR_PATH.read_text(encoding="utf-8", errors="ignore")
-    else:
-        original_text = ""
-
-    # 念のためバックアップを作る
-    if SSYSTEM_MINOR_PATH.exists():
+        original_text = SSYSTEM_MINOR_PATH.read_text(
+            encoding="utf-8",
+            errors="ignore",
+        )
         backup_path = SSYSTEM_MINOR_PATH.with_suffix(".ini.bak")
         shutil.copy2(SSYSTEM_MINOR_PATH, backup_path)
         print(f"バックアップを作成しました: {backup_path}")
+    else:
+        original_text = ""
 
-    # [section_id] から次の [別セクション] の直前までを探す
-    pattern = rf"\n?\[{re.escape(section_id)}\]\n.*?(?=\n\[|\Z)"
+    new_text = original_text
 
-    if re.search(pattern, original_text, re.DOTALL):
+    if old_section_id and old_section_id != section_id:
+        new_text = remove_section(new_text, old_section_id)
+
+    pattern = rf"\r?\n?\[{re.escape(section_id)}\]\r?\n.*?(?=\r?\n\[|\Z)"
+
+    if re.search(pattern, new_text, re.DOTALL):
         new_text = re.sub(
             pattern,
             "\n" + section_text.strip() + "\n",
-            original_text,
-            flags=re.DOTALL
+            new_text,
+            flags=re.DOTALL,
         )
-        print(f"既存の [{section_id}] を置き換えました。")
     else:
-        new_text = original_text.rstrip() + "\n\n" + section_text.strip() + "\n"
-        print(f"新しく [{section_id}] を追加しました。")
+        new_text = new_text.rstrip() + "\n\n" + section_text.strip() + "\n"
 
     SSYSTEM_MINOR_PATH.write_text(new_text, encoding="utf-8")
     print(f"書き込み完了: {SSYSTEM_MINOR_PATH}")
-
-
-def make_section_id(display_name):
-    """
-    Stellariumのセクション名用に、表示名を安全な文字にする。
-    例: JPL_Apophis -> jpl_apophis
-    """
-    return (
-        display_name.lower()
-        .replace(" ", "_")
-        .replace("(", "")
-        .replace(")", "")
-    )
