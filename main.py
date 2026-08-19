@@ -1,20 +1,12 @@
 from datetime import datetime, timedelta, timezone
+import time
 
-from get_orbit import AmbiguousTargetError, JplApiError, TargetResolutionError
+from app_errors import ApplicationError
+from app_service import StellariumNeoService
 from observer import ObserverLocation
-from orbit_service import (
-    DEFAULT_RADEC_TRACK_UPDATE_INTERVAL_SECONDS,
-    FetchMode,
-    OrbitServiceError,
-    TrackingEndReason,
-    get_radec_request_summary,
-    inspect_jpl_target,
-    show_jpl_radec_series,
-    show_jpl_target,
-    show_standard_target,
-    track_jpl_radec_series,
-)
-from stellarium_service import StellariumError
+from orbit_service import DEFAULT_RADEC_TRACK_UPDATE_INTERVAL_SECONDS, FetchMode
+from tracking_service import TrackingState
+
 
 DEFAULT_OBSERVER = ObserverLocation(
     latitude_deg=35.4978,
@@ -22,6 +14,8 @@ DEFAULT_OBSERVER = ObserverLocation(
     altitude_m=0,
     name="MatsueKosen",
 )
+
+APP_SERVICE = StellariumNeoService()
 
 
 def _timezone_from_input(time_type: str) -> timezone:
@@ -54,12 +48,8 @@ def input_datetime() -> datetime:
 def input_datetime_range() -> tuple[datetime, datetime]:
     print("RA/DEC取得範囲を指定してください。")
     tz = input_timezone()
-    start_text = input(
-        "取得開始日時 形式：yyyymmddHHMMSS > "
-    ).strip()
-    end_text = input(
-        "取得終了日時 形式：yyyymmddHHMMSS > "
-    ).strip()
+    start_text = input("取得開始日時 形式：yyyymmddHHMMSS > ").strip()
+    end_text = input("取得終了日時 形式：yyyymmddHHMMSS > ").strip()
 
     return (
         parse_cli_datetime(start_text, tz),
@@ -84,9 +74,7 @@ def input_observer_location() -> ObserverLocation:
     altitude_text = input(
         f"標高[m] Enter={DEFAULT_OBSERVER.altitude_m} > "
     ).strip()
-    name = input(
-        f"地点名 Enter={DEFAULT_OBSERVER.name} > "
-    ).strip()
+    name = input(f"地点名 Enter={DEFAULT_OBSERVER.name} > ").strip()
 
     return ObserverLocation(
         latitude_deg=(
@@ -108,9 +96,7 @@ def input_observer_location() -> ObserverLocation:
     )
 
 
-def input_jpl_settings() -> tuple[str, FetchMode, str | None]:
-    identifier = input_identifier()
-    status = inspect_jpl_target(identifier)
+def input_jpl_fetch_settings(status) -> tuple[FetchMode, str | None]:
     identity = status.identity
 
     print(f"JPLで見つかった天体: {identity.full_name}")
@@ -123,7 +109,7 @@ def input_jpl_settings() -> tuple[str, FetchMode, str | None]:
         )
         answer = input("JPLの最新データで更新しますか? y/n > ").strip().lower()
         mode = FetchMode.FORCE if answer == "y" else FetchMode.NEVER
-        return identifier, mode, None
+        return mode, None
 
     print(f"[{identity.section_id}] はまだ登録されていません。")
     answer = input("JPLデータを新しく追加しますか? y/n > ").strip().lower()
@@ -134,126 +120,146 @@ def input_jpl_settings() -> tuple[str, FetchMode, str | None]:
     display_name = input(
         f"Stellariumでの表示名 Enterで {identity.default_display_name} > "
     ).strip()
+    return FetchMode.AUTO, display_name or None
 
-    return identifier, FetchMode.AUTO, display_name or None
+
+def run_jpl_orbit_cli() -> None:
+    dt = input_datetime()
+    identifier = input_identifier()
+    status = APP_SERVICE.inspect_target(identifier)
+    fetch_mode, display_name = input_jpl_fetch_settings(status)
+
+    result = APP_SERVICE.show_jpl_orbit_target(
+        identifier=identifier,
+        dt=dt,
+        fetch_mode=fetch_mode,
+        display_name=display_name,
+    )
+    print(f"表示完了: {result.focus_target}")
+    print(f"UTC: {result.datetime_utc.strftime('%Y-%m-%d %H:%M:%S')}")
+
+
+def run_standard_cli() -> None:
+    dt = input_datetime()
+    target = input(
+        "Stellarium標準の天体名または天体番号を入力してください > "
+    ).strip()
+    result = APP_SERVICE.show_standard_target(target=target, dt=dt)
+    print(f"表示完了: {result.focus_target}")
+    print(f"UTC: {result.datetime_utc.strftime('%Y-%m-%d %H:%M:%S')}")
+
+
+def run_radec_tracking_cli() -> None:
+    start_dt, end_dt = input_datetime_range()
+    summary = APP_SERVICE.get_radec_request_summary(start_dt, end_dt)
+    identifier = input_identifier()
+    observer = input_observer_location()
+
+    print(f"取得間隔: {summary.step_seconds}秒（固定）")
+    print(f"取得時間: {summary.duration_seconds / 3600:.3f}時間")
+    print(f"取得予定点数: {summary.point_count:,}点")
+
+    session = APP_SERVICE.fetch_radec_session(
+        identifier=identifier,
+        start_dt=start_dt,
+        end_dt=end_dt,
+        observer=observer,
+        display_start=True,
+    )
+
+    print(f"取得完了: {session.target_full_name}")
+    print(f"セッションID: {session.session_id}")
+    print(f"取得点数: {session.point_count:,}点")
+    print(
+        "取得範囲[UTC]: "
+        f"{session.start_datetime_utc.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]} ～ "
+        f"{session.end_datetime_utc.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}"
+    )
+    print(
+        "観測地点: "
+        f"{session.observer.name} "
+        f"({session.observer.latitude_deg}, "
+        f"{session.observer.longitude_deg}, "
+        f"{session.observer.altitude_m} m)"
+    )
+    print(
+        "マーカー更新間隔: "
+        f"{DEFAULT_RADEC_TRACK_UPDATE_INTERVAL_SECONDS}秒"
+    )
+    print(
+        "追尾を開始します。取得範囲外ではマーカーのみ非表示になります。"
+        "Ctrl+Cで追尾を停止します。"
+    )
+
+    APP_SERVICE.start_tracking(
+        session_id=session.session_id,
+        update_interval_seconds=DEFAULT_RADEC_TRACK_UPDATE_INTERVAL_SECONDS,
+    )
+
+    try:
+        while True:
+            status = APP_SERVICE.get_tracking_status()
+
+            if status.state in {TrackingState.STOPPED, TrackingState.ERROR}:
+                break
+
+            time.sleep(0.2)
+    except KeyboardInterrupt:
+        APP_SERVICE.stop_tracking()
+        print("追尾停止を要求しました。")
+        return
+
+    status = APP_SERVICE.get_tracking_status()
+
+    if status.state is TrackingState.ERROR:
+        error = status.error
+        if error is None:
+            print("追尾中に不明なエラーが発生しました。")
+        else:
+            print(f"追尾エラー [{error.code}]: {error.message}")
+        return
+
+    print("追尾を終了しました。")
+    print(f"マーカー更新回数: {status.update_count:,}回")
+
+
+def print_application_error(error: ApplicationError) -> None:
+    print(f"エラー [{error.code}]: {error.message}")
+
+    candidates = error.details.get("candidates")
+    if isinstance(candidates, list) and candidates:
+        print("候補:")
+        for candidate in candidates:
+            if isinstance(candidate, dict):
+                print(
+                    f"- {candidate.get('pdes', '')}: "
+                    f"{candidate.get('name', '')}"
+                )
 
 
 def main() -> None:
     print("表示方法を選択してください")
     print("1: JPL軌道要素をStellariumへ登録して表示")
     print("2: Stellarium標準天体を表示")
-    print("3: JPLの観測地点別RA/DECを表示")
+    print("3: JPLの観測地点別RA/DECを0.5秒間隔で取得してマーカー追尾")
     source_type = input("番号 > ").strip()
-
-    if source_type not in {"1", "2", "3"}:
-        print("1、2、3のいずれかを入力してください。")
-        return
 
     try:
         if source_type == "1":
-            dt = input_datetime()
-            identifier, fetch_mode, display_name = input_jpl_settings()
-            result = show_jpl_target(
-                identifier=identifier,
-                dt=dt,
-                fetch_mode=fetch_mode,
-                display_name=display_name,
-            )
-            print(f"表示完了: {result.focus_target}")
-            print(f"UTC: {result.datetime_utc.strftime('%Y-%m-%d %H:%M:%S')}")
-
+            run_jpl_orbit_cli()
         elif source_type == "2":
-            dt = input_datetime()
-            target = input(
-                "Stellarium標準の天体名または天体番号を入力してください > "
-            ).strip()
-            result = show_standard_target(target=target, dt=dt)
-            print(f"表示完了: {result.focus_target}")
-            print(f"UTC: {result.datetime_utc.strftime('%Y-%m-%d %H:%M:%S')}")
-
+            run_standard_cli()
+        elif source_type == "3":
+            run_radec_tracking_cli()
         else:
-            start_dt, end_dt = input_datetime_range()
-            summary = get_radec_request_summary(start_dt, end_dt)
-            identifier = input_identifier()
-            observer = input_observer_location()
-
-            print(f"取得間隔: {summary.step_seconds}秒（固定）")
-            print(f"取得時間: {summary.duration_seconds / 3600:.3f}時間")
-            print(f"取得予定点数: {summary.point_count:,}点")
-
-            result = show_jpl_radec_series(
-                identifier=identifier,
-                start_dt=start_dt,
-                end_dt=end_dt,
-                observer=observer,
-            )
-            first = result.series.points[0]
-            last = result.series.points[-1]
-
-            print(f"取得完了: {result.identity.full_name}")
-            print(f"取得点数: {result.series.point_count:,}点")
-            print(
-                "取得範囲[UTC]: "
-                f"{result.series.start_datetime_utc.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]} ～ "
-                f"{result.series.end_datetime_utc.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}"
-            )
-            print(
-                "開始位置: "
-                f"RA={first.ra_deg:.10f} deg, "
-                f"DEC={first.dec_deg:.10f} deg"
-            )
-            print(
-                "終了位置: "
-                f"RA={last.ra_deg:.10f} deg, "
-                f"DEC={last.dec_deg:.10f} deg"
-            )
-            print(
-                "観測地点: "
-                f"{result.observer.name} "
-                f"({result.observer.latitude_deg}, "
-                f"{result.observer.longitude_deg}, "
-                f"{result.observer.altitude_m} m)"
-            )
-            print("Stellariumには取得範囲の開始位置を表示しました。")
-            print(
-                "マーカー更新間隔: "
-                f"{DEFAULT_RADEC_TRACK_UPDATE_INTERVAL_SECONDS}秒"
-            )
-            print(
-                "追尾を開始します。Stellarium側で時間を進めると、"
-                "現在時刻に対応したRA/DECへマーカーが移動します。"
-            )
-            print("Ctrl+Cで追尾を終了")
-
-            tracking = track_jpl_radec_series(
-                displayed=result,
-                update_interval_seconds=(
-                    DEFAULT_RADEC_TRACK_UPDATE_INTERVAL_SECONDS
-                ),
-            )
-
-            if tracking.reason is TrackingEndReason.RANGE_END:
-                print("取得範囲の終了時刻を超えたため追尾を終了しました。")
-            else:
-                print("追尾を終了しました。")
-
-            print(f"マーカー更新回数: {tracking.update_count:,}回")
-
+            print("1、2、3のいずれかを入力してください。")
     except KeyboardInterrupt:
+        APP_SERVICE.stop_tracking()
         print("処理を中止しました。")
-    except AmbiguousTargetError as error:
-        print(str(error))
-        print("候補:")
-        for candidate in error.candidates:
-            print(f"- {candidate.get('pdes', '')}: {candidate.get('name', '')}")
-    except (
-        TargetResolutionError,
-        JplApiError,
-        OrbitServiceError,
-        StellariumError,
-        ValueError,
-    ) as error:
-        print(f"エラー: {error}")
+    except ApplicationError as error:
+        print_application_error(error)
+    except ValueError as error:
+        print(f"入力エラー: {error}")
 
 
 if __name__ == "__main__":

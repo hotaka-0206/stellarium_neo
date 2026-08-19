@@ -313,16 +313,9 @@ def get_stellarium_time_state() -> StellariumTimeState:
             "Stellariumの時刻情報を数値として読み取れませんでした。"
         ) from error
 
-    utc_text = time_info.get("utc")
-    datetime_utc: datetime
-
-    if isinstance(utc_text, str):
-        try:
-            datetime_utc = _parse_stellarium_utc_text(utc_text)
-        except ValueError:
-            datetime_utc = julian_day_to_datetime_utc(julian_day)
-    else:
-        datetime_utc = julian_day_to_datetime_utc(julian_day)
+    # RA/DEC追尾ではサブ秒精度が必要になるため、
+    # statusの文字列utcではなく数値jdayを基準時刻として使用する。
+    datetime_utc = julian_day_to_datetime_utc(julian_day)
 
     return StellariumTimeState(
         datetime_utc=datetime_utc,
@@ -552,6 +545,17 @@ def run_stellarium_script(
     )
 
 
+_MANAGED_MARKER_ID_KEY = "__stellariumNeoRaDecMarkerId"
+_MANAGED_LABEL_ID_KEY = "__stellariumNeoRaDecLabelId"
+
+
+def _managed_script_root_line() -> str:
+    return (
+        "var neoRoot = "
+        "(typeof globalThis !== 'undefined') ? globalThis : this;"
+    )
+
+
 def build_radec_marker_script(
     ra_deg: float,
     dec_deg: float,
@@ -573,16 +577,27 @@ def build_radec_marker_script(
 
     return "\n".join(
         [
-            "MarkerMgr.deleteAllMarkers();",
-            "LabelMgr.deleteAllLabels();",
+            _managed_script_root_line(),
             (
-                "var markerId = MarkerMgr.markerEquatorial("
+                f"if (typeof neoRoot.{_MANAGED_MARKER_ID_KEY} === 'number' "
+                f"&& neoRoot.{_MANAGED_MARKER_ID_KEY} > 0) {{ "
+                f"MarkerMgr.deleteMarker(neoRoot.{_MANAGED_MARKER_ID_KEY}); }}"
+            ),
+            (
+                f"if (typeof neoRoot.{_MANAGED_LABEL_ID_KEY} === 'number' "
+                f"&& neoRoot.{_MANAGED_LABEL_ID_KEY} > 0) {{ "
+                f"LabelMgr.deleteLabel(neoRoot.{_MANAGED_LABEL_ID_KEY}); }}"
+            ),
+            (
+                f"neoRoot.{_MANAGED_MARKER_ID_KEY} = "
+                "MarkerMgr.markerEquatorial("
                 f'"{ra_text}", "{dec_text}", '
                 f"true, true, {marker_type_literal}, {color_literal}, "
                 f"{marker_style.marker_size_px}, false, 0, false);"
             ),
             (
-                "var labelId = LabelMgr.labelEquatorial("
+                f"neoRoot.{_MANAGED_LABEL_ID_KEY} = "
+                "LabelMgr.labelEquatorial("
                 f"{label_literal}, "
                 f'"{ra_text}", "{dec_text}", '
                 f"true, {marker_style.label_font_size_px}, "
@@ -590,7 +605,8 @@ def build_radec_marker_script(
                 f"{marker_style.label_distance_px}, false, 0, true);"
             ),
             (
-                "if (markerId < 0 || labelId < 0) { "
+                f"if (neoRoot.{_MANAGED_MARKER_ID_KEY} < 0 "
+                f"|| neoRoot.{_MANAGED_LABEL_ID_KEY} < 0) {{ "
                 'throw new Error("RA/DEC marker creation failed"); }'
             ),
         ]
@@ -612,8 +628,30 @@ def show_radec_marker(
     run_stellarium_script(script_code)
 
 
-def clear_radec_markers() -> None:
-    run_stellarium_script(
-        "MarkerMgr.deleteAllMarkers();\n"
-        "LabelMgr.deleteAllLabels();"
+def build_clear_radec_marker_script() -> str:
+    return "\n".join(
+        [
+            _managed_script_root_line(),
+            (
+                f"if (typeof neoRoot.{_MANAGED_MARKER_ID_KEY} === 'number' "
+                f"&& neoRoot.{_MANAGED_MARKER_ID_KEY} > 0) {{ "
+                f"MarkerMgr.deleteMarker(neoRoot.{_MANAGED_MARKER_ID_KEY}); "
+                f"neoRoot.{_MANAGED_MARKER_ID_KEY} = -1; }}"
+            ),
+            (
+                f"if (typeof neoRoot.{_MANAGED_LABEL_ID_KEY} === 'number' "
+                f"&& neoRoot.{_MANAGED_LABEL_ID_KEY} > 0) {{ "
+                f"LabelMgr.deleteLabel(neoRoot.{_MANAGED_LABEL_ID_KEY}); "
+                f"neoRoot.{_MANAGED_LABEL_ID_KEY} = -1; }}"
+            ),
+        ]
     )
+
+
+def clear_radec_marker() -> None:
+    run_stellarium_script(build_clear_radec_marker_script())
+
+
+def clear_radec_markers() -> None:
+    # 既存呼び出しとの互換用。削除対象はStellarium Neo管理分だけ。
+    clear_radec_marker()

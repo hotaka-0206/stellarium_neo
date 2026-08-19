@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from threading import Event
+from collections.abc import Callable
 import time
 
 from get_orbit import (
@@ -589,6 +590,7 @@ def track_jpl_radec_series(
     follow_view: bool = False,
     stop_event: Event | None = None,
     clear_marker_on_exit: bool = True,
+    on_update: Callable[[int, datetime | None], None] | None = None,
 ) -> RaDecTrackingResult:
     if update_interval_seconds <= 0:
         raise ValueError("マーカー更新間隔は0より大きい値にしてください。")
@@ -601,7 +603,7 @@ def track_jpl_radec_series(
     last_simulation_time = displayed.datetime_utc
     last_position_time: datetime | None = displayed.datetime_utc
     marker_visible = True
-    update_count = 1
+    update_count = 0
     end_reason: TrackingEndReason | None = None
 
     try:
@@ -648,6 +650,9 @@ def track_jpl_radec_series(
                     marker_visible = True
                     update_count += 1
                     last_position_time = position.datetime_utc
+
+                    if on_update is not None:
+                        on_update(update_count, last_position_time)
 
                 last_simulation_time = current_dt
 
