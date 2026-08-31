@@ -1,0 +1,269 @@
+diff --git a/get_orbit.py b/get_orbit.py
+--- a/get_orbit.py
++++ b/get_orbit.py
+@@ -44,6 +44,28 @@ class TargetResolutionError(ValueError):
+     pass
+ 
+ 
++class JapaneseAliasNotRegisteredError(TargetResolutionError):
++    def __init__(self, identifier: str):
++        self.identifier = identifier
++        super().__init__(
++            f"「{identifier}」に対応する日本語名は登録されていません。"
++            "小惑星番号・英名・仮符号・SPK-IDで検索してください。"
++        )
++
++
++class TargetNotFoundError(TargetResolutionError):
++    def __init__(self, identifier: str):
++        self.identifier = identifier
++        super().__init__(
++            f"「{identifier}」に一致する天体はJPLで見つかりませんでした。"
++        )
++
++
+ class JplApiError(RuntimeError):
+     pass
+@@ -114,10 +136,16 @@ class TopocentricRaDecSeries:
+ def normalize_user_identifier(identifier: str) -> str:
+     value = unicodedata.normalize("NFKC", identifier).strip()
+ 
+     if not value:
+         raise TargetResolutionError("天体の識別子が空です。")
+ 
+-    value = JAPANESE_ALIASES.get(value, value)
++    japanese_alias = JAPANESE_ALIASES.get(value)
++    if japanese_alias is not None:
++        value = japanese_alias
++    elif re.search(r"[\u3040-\u30ff\u3400-\u9fff]", value):
++        raise JapaneseAliasNotRegisteredError(value)
+ 
+     if value.upper().startswith("DES="):
+         value = value[4:].strip()
+@@ -204,10 +232,8 @@ def resolve_small_body(identifier: str) -> TargetIdentity:
+     if payload.get("list"):
+         raise AmbiguousTargetError(identifier, payload["list"])
+     obj = payload.get("object")
+ 
+     if not obj:
+-        message = payload.get("message") or payload.get("error") or "天体が見つかりません。"
+-        raise TargetResolutionError(f"識別子 '{identifier}' を解決できませんでした: {message}")
++        raise TargetNotFoundError(identifier)
+     primary_designation = str(obj.get("des") or "").strip()
+     short_name = str(obj.get("shortname") or primary_designation).strip()
+     full_name = str(obj.get("fullname") or short_name).strip()
+diff --git a/app_errors.py b/app_errors.py
+--- a/app_errors.py
++++ b/app_errors.py
+@@ -3,8 +3,10 @@ from typing import Any
+ 
+ from get_orbit import (
+     AmbiguousTargetError,
++    JapaneseAliasNotRegisteredError,
+     JplApiError,
++    TargetNotFoundError,
+     TargetResolutionError,
+ )
+ from orbit_service import (
+@@ -57,6 +59,24 @@ def error_info_from_exception(error: BaseException) -> ErrorInfo:
+     if isinstance(error, ApplicationError):
+         return error.info
++
++    if isinstance(error, JapaneseAliasNotRegisteredError):
++        return ErrorInfo(
++            code="japanese_alias_not_registered",
++            message=str(error),
++            details={
++                "identifier": error.identifier,
++            },
++        )
++
++    if isinstance(error, TargetNotFoundError):
++        return ErrorInfo(
++            code="target_not_found",
++            message=str(error),
++            details={
++                "identifier": error.identifier,
++            },
++        )
++
+     if isinstance(error, AmbiguousTargetError):
+         return ErrorInfo(
+             code="ambiguous_target",
+diff --git a/stellarium_neo_gui/lib/services/api_service.dart b/stellarium_neo_gui/lib/services/api_service.dart
+--- a/stellarium_neo_gui/lib/services/api_service.dart
++++ b/stellarium_neo_gui/lib/services/api_service.dart
+@@ -1,6 +1,24 @@
++import 'dart:async';
+ import 'dart:convert';
+ 
+ import 'package:http/http.dart' as http;
++
++class ApiException implements Exception {
++  const ApiException({
++    required this.code,
++    required this.message,
++    this.details = const <String, dynamic>{},
++    this.statusCode,
++  });
++
++  final String code;
++  final String message;
++  final Map<String, dynamic> details;
++  final int? statusCode;
++
++  @override
++  String toString() => message;
++}
+ 
+ class TargetInfo {
+   const TargetInfo({
+@@ -28,7 +46,10 @@
+   factory TargetInfo.fromApiData(Map<String, dynamic> data) {
+     final identity = data['identity'];
+     if (identity is! Map<String, dynamic>) {
+-      throw const FormatException('天体情報の形式が不正です。');
++      throw const ApiException(
++        code: 'invalid_response',
++        message: 'Python APIから天体情報を取得できませんでした。',
++      );
+     }
+ 
+     return TargetInfo(
+@@ -67,7 +88,10 @@
+ 
+     final targetData = data['data'];
+     if (targetData is! Map<String, dynamic>) {
+-      throw const FormatException('Python APIから天体情報を取得できませんでした。');
++      throw const ApiException(
++        code: 'invalid_response',
++        message: 'Python APIから天体情報を取得できませんでした。',
++      );
+     }
+ 
+     return TargetInfo.fromApiData(targetData);
+@@ -80,8 +104,8 @@
+   }) async {
+     final uri = Uri.parse('$baseUrl$path');
+ 
++    late http.Response response;
+     try {
+-      late http.Response response;
+       switch (method) {
+         case 'GET':
+           response = await http.get(uri).timeout(const Duration(seconds: 8));
+@@ -96,51 +120,79 @@
+               .timeout(const Duration(seconds: 30));
+           break;
+         default:
+-          throw UnsupportedError('未対応のHTTPメソッドです: $method');
++          throw ApiException(
++            code: 'unsupported_http_method',
++            message: '未対応のHTTPメソッドです: $method',
++          );
+       }
++    } on TimeoutException {
++      throw const ApiException(
++        code: 'backend_timeout',
++        message: 'Pythonバックエンドからの応答がタイムアウトしました。',
++      );
++    } on http.ClientException {
++      throw const ApiException(
++        code: 'backend_unreachable',
++        message: 'Pythonバックエンドに接続できませんでした。',
++      );
++    }
+ 
+-      dynamic decoded;
+-      try {
+-        decoded = jsonDecode(response.body);
+-      } catch (_) {
+-        throw FormatException(
+-          'Python APIからJSON以外の応答が返されました。 HTTP ${response.statusCode}',
+-        );
+-      }
++    dynamic decoded;
++    try {
++      decoded = jsonDecode(response.body);
++    } catch (_) {
++      throw ApiException(
++        code: 'invalid_response',
++        message: 'Python APIから不正な応答が返されました。 HTTP ${response.statusCode}',
++        statusCode: response.statusCode,
++      );
++    }
+ 
+-      if (decoded is! Map<String, dynamic>) {
+-        throw const FormatException('Python APIから不正な応答が返されました。');
+-      }
++    if (decoded is! Map<String, dynamic>) {
++      throw ApiException(
++        code: 'invalid_response',
++        message: 'Python APIから不正な応答が返されました。',
++        statusCode: response.statusCode,
++      );
++    }
+ 
+-      if (response.statusCode < 200 || response.statusCode >= 300) {
+-        throw Exception(_extractErrorMessage(decoded, response.statusCode));
+-      }
++    if (response.statusCode < 200 ||
++        response.statusCode >= 300 ||
++        decoded['success'] != true) {
++      throw _extractApiException(decoded, response.statusCode);
++    }
+ 
+-      if (decoded['success'] != true) {
+-        throw Exception(_extractErrorMessage(decoded, response.statusCode));
+-      }
+-
+-      return decoded;
+-    } catch (error) {
+-      if (error is Exception ||
+-          error is FormatException ||
+-          error is UnsupportedError) {
+-        throw Exception('Pythonバックエンドとの通信に失敗しました: $error');
+-      }
+-      rethrow;
+-    }
++    return decoded;
+   }
+ 
+-  String _extractErrorMessage(Map<String, dynamic> data, int statusCode) {
++  ApiException _extractApiException(
++    Map<String, dynamic> data,
++    int statusCode,
++  ) {
+     final error = data['error'];
+     if (error is Map<String, dynamic>) {
+-      final message = error['message'] ?? error['detail'] ?? error['code'];
+-      if (message != null) {
+-        return message.toString();
+-      }
++      final rawDetails = error['details'];
++      final details = rawDetails is Map
++          ? rawDetails.map<String, dynamic>(
++              (key, value) => MapEntry(key.toString(), value),
++            )
++          : const <String, dynamic>{};
++
++      return ApiException(
++        code: error['code']?.toString() ?? 'api_error',
++        message: error['message']?.toString() ?? '処理に失敗しました。',
++        details: details,
++        statusCode: statusCode,
++      );
+     }
+ 
+-    final message = data['message'] ?? data['detail'];
+-    return message?.toString() ?? 'HTTP $statusCode';
++    return ApiException(
++      code: 'api_error',
++      message:
++          data['message']?.toString() ??
++          data['detail']?.toString() ??
++          '処理に失敗しました。 HTTP $statusCode',
++      statusCode: statusCode,
++    );
+   }
+ }

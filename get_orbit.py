@@ -46,6 +46,21 @@ class TargetResolutionError(ValueError):
     pass
 
 
+class JapaneseAliasNotRegisteredError(TargetResolutionError):
+    def __init__(self, identifier: str):
+        self.identifier = identifier
+        super().__init__(
+            f"「{identifier}」に対応する日本語名は登録されていません。"
+            "小惑星番号・英名・仮符号・SPK-IDで検索してください。"
+        )
+
+
+class TargetNotFoundError(TargetResolutionError):
+    def __init__(self, identifier: str):
+        self.identifier = identifier
+        super().__init__(f"「{identifier}」に一致する天体はJPLで見つかりませんでした。")
+
+
 class JplApiError(RuntimeError):
     pass
 
@@ -124,7 +139,11 @@ def normalize_user_identifier(identifier: str) -> str:
     if not value:
         raise TargetResolutionError("天体の識別子が空です。")
 
-    value = JAPANESE_ALIASES.get(value, value)
+    alias = JAPANESE_ALIASES.get(value)
+    if alias is not None:
+        value = alias
+    elif re.search(r"[\u3040-\u30ff\u3400-\u9fff]", value):
+        raise JapaneseAliasNotRegisteredError(value)
 
     if value.upper().startswith("DES="):
         value = value[4:].strip()
@@ -207,12 +226,27 @@ def resolve_small_body(identifier: str) -> TargetIdentity:
 
     try:
         response = requests.get(SBDB_API_URL, params=params, timeout=30)
-        response.raise_for_status()
-        payload = response.json()
     except requests.exceptions.RequestException as error:
         raise JplApiError(f"JPL SBDB APIへの接続に失敗しました: {error}") from error
+
+    try:
+        payload = response.json()
     except ValueError as error:
+        if response.status_code >= 400:
+            raise JplApiError(
+                f"JPL SBDB APIからHTTP {response.status_code}が返されました。"
+            ) from error
         raise JplApiError("JPL SBDB APIのJSONを読み取れませんでした。") from error
+
+    if response.status_code == 400:
+        raise TargetNotFoundError(identifier)
+
+    if response.status_code >= 400:
+        message = payload.get("message") or payload.get("error")
+        detail = f": {message}" if message else ""
+        raise JplApiError(
+            f"JPL SBDB APIでHTTP {response.status_code}エラーが発生しました{detail}"
+        )
 
     if payload.get("list"):
         raise AmbiguousTargetError(identifier, payload["list"])
@@ -220,8 +254,7 @@ def resolve_small_body(identifier: str) -> TargetIdentity:
     obj = payload.get("object")
 
     if not obj:
-        message = payload.get("message") or payload.get("error") or "天体が見つかりません。"
-        raise TargetResolutionError(f"識別子 '{identifier}' を解決できませんでした: {message}")
+        raise TargetNotFoundError(identifier)
 
     primary_designation = str(obj.get("des") or "").strip()
     short_name = str(obj.get("shortname") or primary_designation).strip()
@@ -517,6 +550,7 @@ def fetch_topocentric_radec(
         observer=observer,
     )
 
+
 def _to_horizons_fractional_time(dt: datetime) -> str:
     dt_utc = dt.astimezone(timezone.utc)
     return dt_utc.strftime("%Y-%b-%d %H:%M:%S.%f")[:-3]
@@ -647,4 +681,3 @@ def fetch_topocentric_radec_series(
         start_datetime_utc=start_utc,
         end_datetime_utc=end_utc,
     )
-

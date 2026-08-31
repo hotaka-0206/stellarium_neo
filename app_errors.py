@@ -3,7 +3,9 @@ from typing import Any
 
 from get_orbit import (
     AmbiguousTargetError,
+    JapaneseAliasNotRegisteredError,
     JplApiError,
+    TargetNotFoundError,
     TargetResolutionError,
 )
 from orbit_service import (
@@ -70,6 +72,20 @@ def error_info_from_exception(error: BaseException) -> ErrorInfo:
                 "identifier": error.identifier,
                 "candidates": list(error.candidates),
             },
+        )
+
+    if isinstance(error, JapaneseAliasNotRegisteredError):
+        return ErrorInfo(
+            code="japanese_alias_not_registered",
+            message=str(error),
+            details={"identifier": error.identifier},
+        )
+
+    if isinstance(error, TargetNotFoundError):
+        return ErrorInfo(
+            code="target_not_found",
+            message=str(error),
+            details={"identifier": error.identifier},
         )
 
     if isinstance(error, UnsupportedTargetTypeError):
