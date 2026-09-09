@@ -16,12 +16,13 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final ApiService _apiService = ApiService();
   final TextEditingController _targetController = TextEditingController();
-
   bool _isCheckingBackend = false;
   bool? _backendConnected;
   String _backendStatusMessage = '未接続';
 
   bool _isInspectingTarget = false;
+  bool _isRunningAction = false;
+  bool _isRaDecTracking = false;
   TargetInfo? _targetInfo;
   String? _targetError;
 
@@ -31,7 +32,6 @@ class _HomeScreenState extends State<HomeScreen> {
   late DateTime _orbitReferenceDateTime;
   late DateTime _radecStartDateTime;
   late DateTime _radecEndDateTime;
-
   String _observerName = '松江高専';
   double _observerLatitude = 35.4978;
   double _observerLongitude = 133.025;
@@ -48,7 +48,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
     Future.microtask(_checkBackend);
   }
-
   @override
   void dispose() {
     _targetController.dispose();
@@ -64,7 +63,6 @@ class _HomeScreenState extends State<HomeScreen> {
       _isCheckingBackend = true;
       _backendStatusMessage = '確認中...';
     });
-
     try {
       final message = await _apiService.checkStatus();
       if (!mounted) {
@@ -90,7 +88,6 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     }
   }
-
   Future<void> _inspectTarget() async {
     final identifier = _targetController.text.trim();
     if (identifier.isEmpty || _isInspectingTarget) {
@@ -105,7 +102,6 @@ class _HomeScreenState extends State<HomeScreen> {
       _targetError = null;
       _targetInfo = null;
     });
-
     try {
       final result = await _apiService.inspectTarget(identifier);
       if (!mounted) {
@@ -129,7 +125,6 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     }
   }
-
   Future<DateTime?> _pickDateTime(DateTime current) async {
     final date = await showDatePicker(
       context: context,
@@ -148,10 +143,8 @@ class _HomeScreenState extends State<HomeScreen> {
     if (time == null) {
       return null;
     }
-
     return DateTime(date.year, date.month, date.day, time.hour, time.minute);
   }
-
   Future<void> _editObserver() async {
     final result = await showDialog<_ObserverDraft>(
       context: context,
@@ -167,7 +160,6 @@ class _HomeScreenState extends State<HomeScreen> {
         final altitudeController = TextEditingController(
           text: _observerAltitude.toString(),
         );
-
         String? validateNumber(
           String? value,
           String label,
@@ -183,7 +175,6 @@ class _HomeScreenState extends State<HomeScreen> {
           }
           return null;
         }
-
         return AlertDialog(
           title: const Text('観測地点を変更'),
           content: SizedBox(
@@ -264,7 +255,6 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       },
     );
-
     if (result == null || !mounted) {
       return;
     }
@@ -285,7 +275,6 @@ class _HomeScreenState extends State<HomeScreen> {
     final offset = nextZone == InputTimeZone.utc
         ? const Duration(hours: -9)
         : const Duration(hours: 9);
-
     setState(() {
       _orbitReferenceDateTime = _orbitReferenceDateTime.add(offset);
       _radecStartDateTime = _radecStartDateTime.add(offset);
@@ -294,11 +283,138 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  void _showPendingAction(String actionName) {
-    final message = _targetInfo == null
-        ? '先に天体を検索して確定してください。'
-        : '$actionName は次のAPI接続工程で実装します。';
+  Future<void> _showPendingAction(String actionName) async {
+    final target = _targetInfo;
+    if (target == null) {
+      _showActionMessage('先に天体を検索して確定してください。');
+      return;
+    }
+    if (_isRunningAction) {
+      return;
+    }
 
+    final identifier = target.spkId.isNotEmpty
+        ? target.spkId
+        : target.primaryDesignation;
+
+    setState(() {
+      _isRunningAction = true;
+    });
+
+    try {
+      switch (actionName) {
+        case 'JPL RA/Dec取得':
+          if (_isRaDecTracking) {
+            _showActionMessage('RA/Dec追尾中です。先に追尾を停止してください。');
+            return;
+          }
+
+          final duration = _radecEndDateTime.difference(_radecStartDateTime);
+          if (duration <= Duration.zero) {
+            _showActionMessage('終了日時は開始日時より後にしてください。');
+            return;
+          }
+          if (duration > const Duration(hours: 12)) {
+            _showActionMessage('RA/Dec取得範囲は最大12時間です。');
+            return;
+          }
+
+          final result = await _apiService.fetchRaDec(
+            identifier: identifier,
+            startDateTimeUtc: _toApiDateTimeUtc(_radecStartDateTime),
+            endDateTimeUtc: _toApiDateTimeUtc(_radecEndDateTime),
+            observerName: _observerName,
+            latitudeDeg: _observerLatitude,
+            longitudeDeg: _observerLongitude,
+            altitudeM: _observerAltitude,
+          );
+          final pointCount = result['point_count']?.toString() ?? '不明';
+          final sessionId = result['session_id']?.toString();
+          final trackingResult = await _apiService.startTracking(
+            sessionId: sessionId,
+          );
+          final state = trackingResult['state']?.toString() ?? '';
+          if (!mounted) {
+            return;
+          }
+          setState(() {
+            _isRaDecTracking = state == 'running' || state == 'stopping';
+          });
+          _showActionMessage(
+            'RA/Decを $pointCount 点取得し、Stellariumへ表示して追尾を開始しました。',
+          );
+          break;
+
+        case 'JPL軌道要素取得':
+          if (_isRaDecTracking) {
+            _showActionMessage('RA/Dec追尾中です。先に追尾を停止してください。');
+            return;
+          }
+          await _apiService.showOrbit(
+            identifier: identifier,
+            referenceDateTimeUtc: _toApiDateTimeUtc(_orbitReferenceDateTime),
+            fetchMode: 'force',
+          );
+          _showActionMessage('JPLから軌道要素を取得し、Stellariumへ表示しました。');
+          break;
+
+        case 'RA/Dec追尾停止':
+          await _apiService.stopTracking();
+          if (!mounted) {
+            return;
+          }
+          setState(() {
+            _isRaDecTracking = false;
+          });
+          _showActionMessage('RA/Dec追尾を停止しました。');
+          break;
+
+        case 'Stellarium表示':
+          if (_isRaDecTracking) {
+            _showActionMessage('RA/Dec追尾中です。先に追尾を停止してください。');
+            return;
+          }
+          await _apiService.showOrbit(
+            identifier: identifier,
+            referenceDateTimeUtc: _toApiDateTimeUtc(
+              _orbitReferenceDateTime,
+            ),
+            fetchMode: 'never',
+          );
+          _showActionMessage('登録済みのJPL軌道要素でStellariumへ表示しました。');
+          break;
+      }
+    } catch (error) {
+      _showActionMessage(_cleanException(error));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isRunningAction = false;
+        });
+      }
+    }
+  }
+
+  DateTime _toApiDateTimeUtc(DateTime value) {
+    final wallClockAsUtc = DateTime.utc(
+      value.year,
+      value.month,
+      value.day,
+      value.hour,
+      value.minute,
+      value.second,
+      value.millisecond,
+      value.microsecond,
+    );
+    return _timeZone == InputTimeZone.jst
+        ? wallClockAsUtc.subtract(const Duration(hours: 9))
+        : wallClockAsUtc;
+  }
+
+  void _showActionMessage(String message) {
+    if (!mounted) {
+      return;
+    }
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
@@ -370,10 +486,8 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-
   Widget _buildTargetSection() {
     final targetInfo = _targetInfo;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -402,7 +516,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   : const Icon(Icons.search),
               label: Text(_isInspectingTarget ? '確認中' : 'JPLで検索'),
             );
-
             if (narrow) {
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -413,7 +526,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               );
             }
-
             return Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -502,7 +614,6 @@ class _HomeScreenState extends State<HomeScreen> {
       ],
     );
   }
-
   Widget _buildModeSection() {
     return SegmentedButton<DisplayMode>(
       segments: const [
@@ -525,7 +636,6 @@ class _HomeScreenState extends State<HomeScreen> {
       },
     );
   }
-
   Widget _buildOrbitalConditionSection() {
     return Column(
       key: const ValueKey('orbital-conditions'),
@@ -566,7 +676,6 @@ class _HomeScreenState extends State<HomeScreen> {
       ],
     );
   }
-
   Widget _buildRaDecConditionSection() {
     final duration = _radecEndDateTime.difference(_radecStartDateTime);
     final validOrder = duration > Duration.zero;
@@ -574,7 +683,6 @@ class _HomeScreenState extends State<HomeScreen> {
     final pointCount = validOrder
         ? (duration.inMilliseconds / 500).floor() + 1
         : 0;
-
     return Column(
       key: const ValueKey('radec-conditions'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -663,7 +771,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 }
               },
             );
-
             if (narrow) {
               return Column(
                 children: [
@@ -673,7 +780,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               );
             }
-
             return Row(
               children: [
                 Expanded(child: start),
@@ -717,55 +823,79 @@ class _HomeScreenState extends State<HomeScreen> {
       ],
     );
   }
-
   Widget _buildActionSection() {
-    final canProceed = _targetInfo != null;
+    final canProceed = _targetInfo != null && !_isRunningAction;
     final isRaDec = _displayMode == DisplayMode.radec;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final narrow = constraints.maxWidth < 620;
-            final fetchButton = FilledButton.icon(
-              onPressed: canProceed
-                  ? () => _showPendingAction(
-                        isRaDec ? 'JPL RA/Dec取得' : 'JPL軌道要素取得',
-                      )
-                  : null,
-              icon: const Icon(Icons.cloud_download_outlined),
-              label: Text(isRaDec ? 'JPLからRA/Decを取得' : 'JPLから軌道要素を取得'),
-            );
-            final displayButton = OutlinedButton.icon(
-              onPressed: canProceed
-                  ? () => _showPendingAction('Stellarium表示')
-                  : null,
-              icon: const Icon(Icons.open_in_new),
-              label: const Text('Stellariumへ表示'),
-            );
+    if (isRaDec) {
+      final actionName = _isRaDecTracking ? 'RA/Dec追尾停止' : 'JPL RA/Dec取得';
+      final buttonLabel = _isRaDecTracking
+          ? 'RA/Dec追尾を停止'
+          : 'JPLからRA/Decを取得して表示';
+      final buttonIcon = _isRaDecTracking
+          ? Icons.stop_circle_outlined
+          : Icons.cloud_download_outlined;
 
-            if (narrow) {
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  SizedBox(height: 52, child: fetchButton),
-                  const SizedBox(height: 10),
-                  SizedBox(height: 52, child: displayButton),
-                ],
-              );
-            }
-
-            return Row(
-              children: [
-                Expanded(child: SizedBox(height: 52, child: fetchButton)),
-                const SizedBox(width: 10),
-                Expanded(child: SizedBox(height: 52, child: displayButton)),
-              ],
-            );
-          },
+      return SizedBox(
+        height: 52,
+        child: FilledButton.icon(
+          onPressed: canProceed
+              ? () => _showPendingAction(actionName)
+              : null,
+          icon: _isRunningAction
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : Icon(buttonIcon),
+          label: Text(buttonLabel),
         ),
-      ],
+      );
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final narrow = constraints.maxWidth < 620;
+        final fetchButton = FilledButton.icon(
+          onPressed: canProceed
+              ? () => _showPendingAction('JPL軌道要素取得')
+              : null,
+          icon: _isRunningAction
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.cloud_download_outlined),
+          label: const Text('JPLから軌道要素を取得'),
+        );
+        final displayButton = OutlinedButton.icon(
+          onPressed: canProceed
+              ? () => _showPendingAction('Stellarium表示')
+              : null,
+          icon: const Icon(Icons.open_in_new),
+          label: const Text('Stellariumへ表示'),
+        );
+
+        if (narrow) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SizedBox(height: 52, child: fetchButton),
+              const SizedBox(height: 10),
+              SizedBox(height: 52, child: displayButton),
+            ],
+          );
+        }
+        return Row(
+          children: [
+            Expanded(child: SizedBox(height: 52, child: fetchButton)),
+            const SizedBox(width: 10),
+            Expanded(child: SizedBox(height: 52, child: displayButton)),
+          ],
+        );
+      },
     );
   }
 
@@ -783,7 +913,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     return '$hours 時間 $minutes 分';
   }
-
   String _pad2(int value) => value.toString().padLeft(2, '0');
 
   String _cleanException(Object error) {
@@ -805,7 +934,6 @@ class _SectionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-
     return Card(
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(14),
@@ -855,7 +983,6 @@ class _SectionCard extends StatelessWidget {
     );
   }
 }
-
 class _BackendStatusChip extends StatelessWidget {
   const _BackendStatusChip({
     required this.isChecking,
@@ -868,7 +995,6 @@ class _BackendStatusChip extends StatelessWidget {
   final bool? connected;
   final String message;
   final VoidCallback onPressed;
-
   @override
   Widget build(BuildContext context) {
     final color = isChecking
@@ -878,7 +1004,6 @@ class _BackendStatusChip extends StatelessWidget {
             : connected == false
                 ? Colors.redAccent
                 : Colors.white70;
-
     return Tooltip(
       message: message,
       child: TextButton.icon(
@@ -901,7 +1026,6 @@ class _BackendStatusChip extends StatelessWidget {
     );
   }
 }
-
 class _DateTimeField extends StatelessWidget {
   const _DateTimeField({
     required this.label,
@@ -912,7 +1036,6 @@ class _DateTimeField extends StatelessWidget {
   final String label;
   final String value;
   final VoidCallback onPressed;
-
   @override
   Widget build(BuildContext context) {
     return InkWell(
@@ -929,13 +1052,11 @@ class _DateTimeField extends StatelessWidget {
     );
   }
 }
-
 class _LabeledValue extends StatelessWidget {
   const _LabeledValue({required this.label, required this.value});
 
   final String label;
   final String value;
-
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -967,12 +1088,10 @@ class _LabeledValue extends StatelessWidget {
     );
   }
 }
-
 class _InfoPill extends StatelessWidget {
   const _InfoPill({required this.label});
 
   final String label;
-
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -992,7 +1111,6 @@ class _InfoPill extends StatelessWidget {
     );
   }
 }
-
 class _InlineNote extends StatelessWidget {
   const _InlineNote({
     required this.icon,
@@ -1009,7 +1127,6 @@ class _InlineNote extends StatelessWidget {
     final color = isError
         ? Theme.of(context).colorScheme.error
         : Theme.of(context).colorScheme.primary;
-
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -1027,7 +1144,6 @@ class _InlineNote extends StatelessWidget {
     );
   }
 }
-
 class _ObserverDraft {
   const _ObserverDraft({
     required this.name,

@@ -17,7 +17,6 @@ class ApiException implements Exception {
   @override
   String toString() => message;
 }
-
 class TargetInfo {
   const TargetInfo({
     required this.fullName,
@@ -30,7 +29,6 @@ class TargetInfo {
     this.minorPlanetNumber,
     this.iauDesignation,
   });
-
   final String fullName;
   final String shortName;
   final String primaryDesignation;
@@ -46,7 +44,6 @@ class TargetInfo {
     if (identity is! Map<String, dynamic>) {
       throw const FormatException('天体情報の形式が不正です。');
     }
-
     return TargetInfo(
       fullName: identity['full_name']?.toString() ?? '',
       shortName: identity['short_name']?.toString() ?? '',
@@ -62,7 +59,6 @@ class TargetInfo {
     );
   }
 }
-
 class ApiService {
   static const String baseUrl = 'http://127.0.0.1:8000';
 
@@ -80,7 +76,6 @@ class ApiService {
       path: '/api/target/inspect',
       body: {'identifier': identifier},
     );
-
     final targetData = data['data'];
     if (targetData is! Map<String, dynamic>) {
       throw const ApiException(
@@ -92,18 +87,107 @@ class ApiService {
     return TargetInfo.fromApiData(targetData);
   }
 
+  Future<Map<String, dynamic>> showOrbit({
+    required String identifier,
+    required DateTime referenceDateTimeUtc,
+    String fetchMode = 'auto',
+    String? displayName,
+    double fovDeg = 30,
+  }) async {
+    final data = await _requestJson(
+      method: 'POST',
+      path: '/api/orbit/show',
+      body: {
+        'identifier': identifier,
+        'reference_datetime': referenceDateTimeUtc.toUtc().toIso8601String(),
+        'fetch_mode': fetchMode,
+        'display_name': displayName,
+        'fov_deg': fovDeg,
+      },
+      timeout: const Duration(seconds: 90),
+    );
+    return _requireDataMap(data, '軌道要素の表示結果');
+  }
+
+  Future<Map<String, dynamic>> fetchRaDec({
+    required String identifier,
+    required DateTime startDateTimeUtc,
+    required DateTime endDateTimeUtc,
+    required String observerName,
+    required double latitudeDeg,
+    required double longitudeDeg,
+    required double altitudeM,
+  }) async {
+    final data = await _requestJson(
+      method: 'POST',
+      path: '/api/radec/fetch',
+      body: {
+        'identifier': identifier,
+        'start_datetime': startDateTimeUtc.toUtc().toIso8601String(),
+        'end_datetime': endDateTimeUtc.toUtc().toIso8601String(),
+        'observer': {
+          'name': observerName,
+          'latitude_deg': latitudeDeg,
+          'longitude_deg': longitudeDeg,
+          'altitude_m': altitudeM,
+        },
+      },
+      timeout: const Duration(minutes: 3),
+    );
+    return _requireDataMap(data, 'RA/Dec取得結果');
+  }
+
+  Future<Map<String, dynamic>> startTracking({
+    String? sessionId,
+    double updateIntervalSeconds = 0.1,
+    bool followView = false,
+  }) async {
+    final data = await _requestJson(
+      method: 'POST',
+      path: '/api/tracking/start',
+      body: {
+        'session_id': sessionId,
+        'update_interval_seconds': updateIntervalSeconds,
+        'follow_view': followView,
+      },
+    );
+    return _requireDataMap(data, '追尾開始結果');
+  }
+
+  Future<Map<String, dynamic>> stopTracking() async {
+    final data = await _requestJson(
+      method: 'POST',
+      path: '/api/tracking/stop',
+    );
+    return _requireDataMap(data, '追尾停止結果');
+  }
+
+  Map<String, dynamic> _requireDataMap(
+    Map<String, dynamic> response,
+    String label,
+  ) {
+    final value = response['data'];
+    if (value is! Map<String, dynamic>) {
+      throw ApiException(
+        code: 'invalid_backend_response',
+        message: 'Python APIから$labelを取得できませんでした。',
+      );
+    }
+    return value;
+  }
+
   Future<Map<String, dynamic>> _requestJson({
     required String method,
     required String path,
     Map<String, dynamic>? body,
+    Duration timeout = const Duration(seconds: 30),
   }) async {
     final uri = Uri.parse('$baseUrl$path');
-
     late http.Response response;
     try {
       switch (method) {
         case 'GET':
-          response = await http.get(uri).timeout(const Duration(seconds: 8));
+          response = await http.get(uri).timeout(timeout);
           break;
         case 'POST':
           response = await http
@@ -112,7 +196,7 @@ class ApiService {
                 headers: const {'Content-Type': 'application/json'},
                 body: jsonEncode(body ?? const <String, dynamic>{}),
               )
-              .timeout(const Duration(seconds: 30));
+              .timeout(timeout);
           break;
         default:
           throw UnsupportedError('未対応のHTTPメソッドです: $method');
@@ -128,7 +212,6 @@ class ApiService {
         message: 'Pythonバックエンドに接続できませんでした。',
       );
     }
-
     dynamic decoded;
     try {
       decoded = jsonDecode(response.body);
@@ -146,7 +229,6 @@ class ApiService {
         message: 'Python APIから不正な応答が返されました。',
       );
     }
-
     if (response.statusCode < 200 ||
         response.statusCode >= 300 ||
         decoded['success'] != true) {
@@ -155,7 +237,6 @@ class ApiService {
 
     return decoded;
   }
-
   ApiException _extractApiException(
     Map<String, dynamic> data,
     int statusCode,
@@ -168,7 +249,6 @@ class ApiService {
           error['detail']?.toString() ??
           code;
       final details = error['details'];
-
       return ApiException(
         code: code,
         message: message,
