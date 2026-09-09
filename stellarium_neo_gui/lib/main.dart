@@ -1,6 +1,5 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
+import 'package:window_manager/window_manager.dart';
 
 import 'screens/home_screen.dart';
 import 'services/backend_service.dart';
@@ -10,8 +9,9 @@ final BackendService _backendService = BackendService();
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 既にバックエンドが動いていればそのまま利用し、
-  // 動いていなければ配布フォルダ内のexeを自動起動する。
+  await windowManager.ensureInitialized();
+  await windowManager.setPreventClose(true);
+
   await _backendService.ensureRunning();
 
   runApp(
@@ -34,35 +34,38 @@ class StellariumNeoApp extends StatefulWidget {
 }
 
 class _StellariumNeoAppState extends State<StellariumNeoApp>
-    with WidgetsBindingObserver {
-  bool _backendStopped = false;
+    with WindowListener {
+  bool _closing = false;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
+    windowManager.addListener(this);
   }
 
   @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.detached) {
-      unawaited(_stopBackend());
-    }
-  }
-
-  Future<void> _stopBackend() async {
-    if (_backendStopped) {
+  void onWindowClose() async {
+    if (_closing) {
       return;
     }
 
-    _backendStopped = true;
+    final isPreventClose = await windowManager.isPreventClose();
+    if (!isPreventClose) {
+      return;
+    }
+
+    _closing = true;
+
+    // Flutter自身が起動したバックエンドだけ停止する。
     await widget.backendService.stop();
+
+    // バックエンド停止後にFlutterウィンドウを終了する。
+    await windowManager.destroy();
   }
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    unawaited(_stopBackend());
+    windowManager.removeListener(this);
     super.dispose();
   }
 
