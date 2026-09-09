@@ -9,8 +9,6 @@ from app_errors import ApplicationError
 from app_service import StellariumNeoService
 from observer import ObserverLocation
 from orbit_service import DEFAULT_RADEC_TRACK_UPDATE_INTERVAL_SECONDS
-
-
 # ============================================================
 # FastAPI Application
 # ============================================================
@@ -19,8 +17,6 @@ app = FastAPI(
     title="Stellarium Neo API",
     version="0.1.0",
 )
-
-
 # ============================================================
 # Application Service
 #
@@ -32,8 +28,6 @@ app = FastAPI(
 # ============================================================
 
 app_service = StellariumNeoService()
-
-
 # ============================================================
 # Request Models
 # ============================================================
@@ -53,6 +47,16 @@ class ObserverRequest(BaseModel):
     name: str = "Custom observer"
 
 
+class OrbitShowRequest(BaseModel):
+    """JPL軌道要素によるStellarium表示用リクエスト。"""
+
+    identifier: str
+    reference_datetime: datetime
+    fetch_mode: str = "auto"
+    display_name: str | None = None
+    fov_deg: float = 30.0
+
+
 class RaDecFetchRequest(BaseModel):
     """RA/DEC系列取得用リクエスト。"""
 
@@ -70,8 +74,6 @@ class TrackingStartRequest(BaseModel):
         DEFAULT_RADEC_TRACK_UPDATE_INTERVAL_SECONDS
     )
     follow_view: bool = False
-
-
 # ============================================================
 # Error Handler
 # ============================================================
@@ -93,8 +95,6 @@ async def application_error_handler(
             "error": error.to_dict(),
         },
     )
-
-
 # ============================================================
 # API Status
 # ============================================================
@@ -109,8 +109,6 @@ def get_api_status():
         "success": True,
         "message": "Stellarium Neo backend is running",
     }
-
-
 # ============================================================
 # Target
 # ============================================================
@@ -131,13 +129,37 @@ def inspect_target(request: TargetInspectRequest):
     status = app_service.inspect_target(
         identifier=request.identifier,
     )
-
     return {
         "success": True,
         "data": jsonable_encoder(status),
     }
+# ============================================================
+# Orbit
+# ============================================================
 
+@app.post("/api/orbit/show")
+def show_orbit(request: OrbitShowRequest):
+    """
+    JPL軌道要素を使って対象天体をStellariumへ表示する。
 
+    fetch_mode:
+    - auto: 未登録の場合だけJPLから取得する
+    - force: JPLから軌道要素を再取得して登録・表示する
+    - never: 既に登録済みのJPL版を再取得せず表示する
+    """
+
+    result = app_service.show_jpl_orbit_target(
+        identifier=request.identifier,
+        dt=request.reference_datetime,
+        fetch_mode=request.fetch_mode,
+        display_name=request.display_name,
+        fov_deg=request.fov_deg,
+    )
+
+    return {
+        "success": True,
+        "data": jsonable_encoder(result),
+    }
 # ============================================================
 # RA/DEC
 # ============================================================
@@ -158,7 +180,6 @@ def fetch_radec(request: RaDecFetchRequest):
     - 開始時点のRA/DEC
     - RA/DECマーカー
     """
-
     observer = ObserverLocation(
         latitude_deg=request.observer.latitude_deg,
         longitude_deg=request.observer.longitude_deg,
@@ -173,7 +194,6 @@ def fetch_radec(request: RaDecFetchRequest):
         observer=observer,
         display_start=True,
     )
-
     return {
         "success": True,
         "data": session.to_dict(),
@@ -200,7 +220,6 @@ def get_current_radec_session():
         ),
     }
 
-
 @app.delete("/api/radec/session")
 def clear_current_radec_session():
     """
@@ -217,8 +236,6 @@ def clear_current_radec_session():
         "success": True,
         "message": "RA/DEC session cleared",
     }
-
-
 # ============================================================
 # Tracking
 # ============================================================
@@ -261,7 +278,6 @@ def stop_tracking():
 
     既に停止している場合も現在の状態を返す。
     """
-
     status = app_service.stop_tracking()
 
     return {
