@@ -10,7 +10,7 @@ Stellarium公式サイトを開きます。
 
 > **Stellarium公式サイト**
 >
-> GitHub上では、ここにStellarium公式サイトへのリンクを設定します。
+> https://stellarium.org/ja/
 
 公式サイト上部にWindows向けのダウンロード項目があります。
 
@@ -101,8 +101,7 @@ docs/images/windows/02_stellarium_installer.png
 ## 2. プログラムをダウンロードする
 
 GitHubのこのリポジトリを開きます。
-
-画面右側にある **Releases** から、最新のWindows版Releaseを開きます。
+https://github.com/hotaka-0206/stellarium_neo/releases/tag/v0.1.0-test
 
 現在のテスト版では、
 
@@ -145,8 +144,6 @@ Assetsには、
 ## 3. ZIPファイルを展開する
 
 Windowsの **エクスプローラー** を開きます。
-
-MacのFinderに相当するものです。
 
 左側の一覧から **「ダウンロード」** を開くと、先ほどダウンロードしたZIPファイルがあります。
 
