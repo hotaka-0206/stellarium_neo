@@ -30,23 +30,7 @@ ARM版Windows PCの場合は通常版とは異なるため、
 
 を使用します。
 
-<!--
-【画像1を追加】
-
-Stellarium公式サイト上部のダウンロード部分。
-
-以下が分かるようにする。
-・Windows x86_64
-・Qt6
-・Windows 10+
-
-使用する項目を赤枠などで示すと分かりやすい。
-
-保存先例：
-docs/images/windows/01_stellarium_download.png
-
-![Stellariumのダウンロード](images/windows/01_stellarium_download.png)
--->
+![Stellariumのダウンロード](images/Windows/01_stellarium_download.png)
 
 ---
 
@@ -79,20 +63,6 @@ docs/images/windows/01_stellarium_download.png
 
 インストール先などを変更する必要がなければ、基本的には初期設定のままで構いません。
 
-<!--
-【画像2を追加】
-
-Stellariumのインストーラー画面。
-
-最初の「Stellarium セットアップ」画面など、
-「この画面が出れば正しいインストーラーを開けている」と
-判断できる画像がよい。
-
-保存先例：
-docs/images/windows/02_stellarium_installer.png
-
-![Stellariumのインストーラー](images/windows/02_stellarium_installer.png)
--->
 
 インストールが完了したら、Stellariumを起動してください。
 
@@ -111,21 +81,7 @@ https://github.com/hotaka-0206/stellarium_neo/releases/tag/v0.1.0-test
 
 Releaseページの **Assets** を開き、Windows用のZIPファイルをダウンロードしてください。
 
-<!--
-【画像3を追加】
-
-GitHubのReleaseページ。
-
-以下が一度に分かる画像がよい。
-・Windows test build
-・Assets
-・実際にダウンロードするWindows用ZIPファイル
-
-保存先例：
-docs/images/windows/03_release_download.png
-
-![Windows版のダウンロード](images/windows/03_release_download.png)
--->
+![Stellariumのダウンロード](images/Windows/02_stellarium_download.png)
 
 ### Source codeは使用しない
 
@@ -153,17 +109,7 @@ ZIPファイルを右クリックして、
 
 を選択します。
 
-<!--
-【画像4を追加】
-
-ダウンロードしたZIPファイルを右クリックし、
-「すべて展開」が表示されている状態。
-
-保存先例：
-docs/images/windows/04_extract_zip.png
-
-![ZIPファイルの展開](images/windows/04_extract_zip.png)
--->
+![Stellariumのダウンロード](images/Windows/03_stellarium_download.png)
 
 展開先は変更せず、そのまま **「展開」** を押して構いません。
 
@@ -205,24 +151,7 @@ Stellarium上で `F2` キーを押します。
 
 という順番で操作します。
 
-<!--
-【画像5を追加】
-
-F2
-→ プラグイン
-→ リモートコントロール
-
-まで開いた状態。
-
-特に
-「起動時に実行」
-のチェック欄が分かるようにする。
-
-保存先例：
-docs/images/windows/05_remote_control_plugin.png
-
-![Remote Controlプラグイン](images/windows/05_remote_control_plugin.png)
--->
+![Stellariumのダウンロード](images/Windows/04_stellarium_download.png)
 
 ---
 
@@ -263,21 +192,7 @@ Remote Controlの設定画面で、次の項目を有効にします。
 
 設定後、**「設定を保存」** を押します。
 
-<!--
-【画像6を追加】
-
-Remote Controlの設定画面。
-
-以下の3か所が分かるようにする。
-・サーバーが利用可能
-・起動時に自動的に有効にする
-・ポート番号 8090
-
-保存先例：
-docs/images/windows/06_remote_control_settings.png
-
-![Remote Controlの設定](images/windows/06_remote_control_settings.png)
--->
+![Stellariumのダウンロード](images/Windows/05_stellarium_download.png)
 
 設定が完了したら、一度Stellariumを終了して、もう一度起動してください。
 
@@ -289,20 +204,7 @@ docs/images/windows/06_remote_control_settings.png
 
 フォルダ内にある実行ファイル（`.exe`）をダブルクリックします。
 
-<!--
-【画像7を追加】
-
-実際に配布しているZIPファイルを展開した直後のフォルダ。
-
-起動する.exeファイルを選択した状態で撮影する。
-
-ここでは実際のファイル名も画像と本文の両方に記載する。
-
-保存先例：
-docs/images/windows/07_executable.png
-
-![実行ファイル](images/windows/07_executable.png)
--->
+![Stellariumのダウンロード](images/Windows/06_stellarium_download.png)
 
 ### `.exe`ファイルだけを移動しない
 
@@ -327,34 +229,12 @@ docs/images/windows/07_executable.png
 
 と進みます。
 
-<!--
-【画像8を追加】
-
-実際に警告が出る場合は、
-「WindowsによってPCが保護されました」
-→「詳細情報」
-→「実行」
-が分かる画像を追加する。
-
-警告が出ない場合は、この画像はなくてもよい。
--->
-
 ---
 
 ## 7. 起動を確認する
 
 正常に起動すると、プログラムのメイン画面が表示されます。
 
-<!--
-【画像9を追加】
-
-プログラムを正常に起動した直後のメイン画面。
-
-保存先例：
-docs/images/windows/09_main_screen.png
-
-![メイン画面](images/windows/09_main_screen.png)
--->
 
 バックエンドはプログラムと一緒に自動で起動するため、
 
@@ -380,22 +260,6 @@ Stellariumを起動した状態で、プログラムから天体を検索しま�
 
 Stellarium側に対象の天体またはマーカーが表示されれば、使用準備は完了です。
 
-<!--
-【画像10を追加】
-
-最終的な動作確認用。
-
-可能であれば、
-・プログラム側でApophisを取得できている状態
-・Stellarium側に表示されている状態
-
-の両方が分かる画像にする。
-
-保存先例：
-docs/images/windows/10_success.png
-
-![動作確認](images/windows/10_success.png)
--->
 
 ---
 
