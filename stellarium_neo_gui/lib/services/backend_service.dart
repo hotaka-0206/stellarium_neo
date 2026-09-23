@@ -17,8 +17,7 @@ class BackendStartResult {
 }
 
 class BackendService {
-  static final Uri _statusUri =
-      Uri.parse('http://127.0.0.1:8000/api/status');
+  static final Uri _statusUri = Uri.parse('http://127.0.0.1:8000/api/status');
 
   Process? _process;
 
@@ -33,21 +32,21 @@ class BackendService {
       );
     }
 
-    if (!Platform.isWindows) {
+    if (!Platform.isWindows && !Platform.isMacOS) {
       return const BackendStartResult(
         success: false,
         startedByApp: false,
-        message: 'バックエンドの自動起動は現在Windows版のみ対応しています。',
+        message: 'バックエンドの自動起動は現在Windows/macOS版に対応しています。',
       );
     }
 
     final backendExecutable = _findBackendExecutable();
-
     if (!await backendExecutable.exists()) {
       return BackendStartResult(
         success: false,
         startedByApp: false,
-        message: 'バックエンド実行ファイルが見つかりません: '
+        message:
+            'バックエンド実行ファイルが見つかりません: '
             '${backendExecutable.path}',
       );
     }
@@ -108,10 +107,14 @@ class BackendService {
   File _findBackendExecutable() {
     final appDirectory = File(Platform.resolvedExecutable).parent;
 
+    final executableName = Platform.isWindows
+        ? 'stellarium_neo_backend.exe'
+        : 'stellarium_neo_backend';
+
     return File(
       '${appDirectory.path}'
       '${Platform.pathSeparator}backend'
-      '${Platform.pathSeparator}stellarium_neo_backend.exe',
+      '${Platform.pathSeparator}$executableName',
     );
   }
 
@@ -127,8 +130,7 @@ class BackendService {
 
       final decoded = jsonDecode(response.body);
 
-      return decoded is Map<String, dynamic> &&
-          decoded['success'] == true;
+      return decoded is Map<String, dynamic> && decoded['success'] == true;
     } catch (_) {
       return false;
     }
