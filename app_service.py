@@ -24,7 +24,11 @@ from radec_store import (
     RaDecSession,
     RaDecSessionStore,
 )
-from stellarium_service import RaDecMarkerStyle, clear_radec_marker
+from stellarium_service import (
+    RaDecMarkerStyle,
+    clear_radec_marker,
+    select_object_without_moving_view,
+)
 from tracking_service import RaDecTrackingManager, TrackingStatus
 
 
@@ -110,6 +114,8 @@ class StellariumNeoService:
         fetch_mode: FetchMode | str = FetchMode.AUTO,
         display_name: str | None = None,
         fov_deg: float = 30,
+        observer: ObserverLocation | None = None,
+        show_name_label: bool = True,
     ) -> DisplayResult:
         return self._call(
             show_jpl_target,
@@ -118,7 +124,14 @@ class StellariumNeoService:
             fetch_mode=fetch_mode,
             display_name=display_name,
             fov_deg=fov_deg,
+            observer=observer,
+            show_name_label=show_name_label,
         )
+
+    def reselect_orbit_target(self, focus_target: str) -> dict[str, str]:
+        """Restore selection of the last displayed orbit target only."""
+        self._call(select_object_without_moving_view, focus_target)
+        return {"focus_target": focus_target}
 
     def show_standard_target(
         self,

@@ -36,7 +36,9 @@ class _HomeScreenState extends State<HomeScreen> {
   double _observerLatitude = 35.4978;
   double _observerLongitude = 133.025;
   double _observerAltitude = 0.0;
-
+  String _markerType = 'square';
+  bool _showOrbitName = true;
+  String? _lastOrbitFocusTarget;
   @override
   void initState() {
     super.initState();
@@ -267,6 +269,83 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  Future<void> _editMarkerStyle() async {
+    const types = <String, String>{
+      'square': '四角形（推奨）',
+      'dashed-square': '点線の四角形',
+      'cross': '十字',
+      'target': '照準',
+      'dotted-circle': '点線の円',
+    };
+    var selected = _markerType;
+    var keepOrbitName = _showOrbitName;
+    final result = await showDialog<Map<String, Object>>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('表示の設定'),
+          content: SizedBox(
+            width: 420,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                DropdownButtonFormField<String>(
+                  initialValue: selected,
+                  decoration: const InputDecoration(labelText: '高精度マーカーの形状'),
+                  items: types.entries
+                      .map((entry) => DropdownMenuItem<String>(
+                            value: entry.key,
+                            child: Text(entry.value),
+                          ))
+                      .toList(),
+                  onChanged: (value) {
+                    if (value != null) {
+                      setDialogState(() => selected = value);
+                    }
+                  },
+                ),
+                const SizedBox(height: 14),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('通常精度：天体名を常時表示'),
+                  subtitle: const Text('別の場所をクリックしても名前を残します'),
+                  value: keepOrbitName,
+                  onChanged: (value) {
+                    setDialogState(() => keepOrbitName = value);
+                  },
+                ),
+                const SizedBox(height: 12),
+                const Text('設定の変更は次回の表示から反映されます。'),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('キャンセル'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(
+                <String, Object>{
+                  'marker': selected,
+                  'showOrbitName': keepOrbitName,
+                },
+              ),
+              child: const Text('適用'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (result != null && mounted) {
+      setState(() {
+        _markerType = result['marker'] as String;
+        _showOrbitName = result['showOrbitName'] as bool;
+      });
+    }
+  }
+
   void _setTimeZone(InputTimeZone nextZone) {
     if (nextZone == _timeZone) {
       return;
@@ -281,6 +360,61 @@ class _HomeScreenState extends State<HomeScreen> {
       _radecEndDateTime = _radecEndDateTime.add(offset);
       _timeZone = nextZone;
     });
+  }
+
+  Future<void> _stopTrackingBeforeOrbitDisplay() async {
+    // Determine the actual state on the backend; the GUI flag may be stale.
+    final status = await _apiService.getTrackingStatus();
+    final state = status['state']?.toString();
+    if (state == 'running' || state == 'stopping') {
+      await _apiService.stopTracking();
+      // Stopping can be asynchronous: do not manipulate Stellarium while the
+      // old tracking worker might still be writing to it.
+      var finished = false;
+      for (var attempt = 0; attempt < 40; attempt++) {
+        final current = await _apiService.getTrackingStatus();
+        final currentState = current['state']?.toString();
+        if (currentState != 'running' && currentState != 'stopping') {
+          finished = true;
+          break;
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+      }
+      if (!finished) {
+        throw StateError('高精度の追尾停止が完了しませんでした。');
+      }
+    }
+    if (mounted) {
+      setState(() {
+        _isRaDecTracking = false;
+      });
+    }
+  }
+
+  void _rememberOrbitFocusTarget(Map<String, dynamic> result) {
+    final target = result['focus_target']?.toString().trim();
+    if (target != null && target.isNotEmpty && mounted) {
+      setState(() => _lastOrbitFocusTarget = target);
+    }
+  }
+
+  Future<void> _reselectLastOrbitTarget() async {
+    final focusTarget = _lastOrbitFocusTarget;
+    if (focusTarget == null || _isRunningAction || _isRaDecTracking) {
+      return;
+    }
+    setState(() => _isRunningAction = true);
+    try {
+      // Do NOT change time/FOV, fetch orbit elements, or activate Stellarium.
+      await _apiService.reselectOrbit(focusTarget: focusTarget);
+      _showActionMessage('天体を再選択しました。Stellariumで詳細情報を確認できます。');
+    } catch (error) {
+      _showActionMessage(_cleanException(error));
+    } finally {
+      if (mounted) {
+        setState(() => _isRunningAction = false);
+      }
+    }
   }
 
   Future<void> _showPendingAction(String actionName) async {
@@ -327,11 +461,13 @@ class _HomeScreenState extends State<HomeScreen> {
             latitudeDeg: _observerLatitude,
             longitudeDeg: _observerLongitude,
             altitudeM: _observerAltitude,
+            markerType: _markerType,
           );
           final pointCount = result['point_count']?.toString() ?? '不明';
           final sessionId = result['session_id']?.toString();
           final trackingResult = await _apiService.startTracking(
             sessionId: sessionId,
+            markerType: _markerType,
           );
           final state = trackingResult['state']?.toString() ?? '';
           if (!mounted) {
@@ -346,15 +482,18 @@ class _HomeScreenState extends State<HomeScreen> {
           break;
 
         case 'JPL軌道要素取得':
-          if (_isRaDecTracking) {
-            _showActionMessage('RA/Dec追尾中です。先に追尾を停止してください。');
-            return;
-          }
-          await _apiService.showOrbit(
+          await _stopTrackingBeforeOrbitDisplay();
+          final freshOrbitResult = await _apiService.showOrbit(
             identifier: identifier,
             referenceDateTimeUtc: _toApiDateTimeUtc(_orbitReferenceDateTime),
             fetchMode: 'force',
+            showNameLabel: _showOrbitName,
+            observerName: _observerName,
+            latitudeDeg: _observerLatitude,
+            longitudeDeg: _observerLongitude,
+            altitudeM: _observerAltitude,
           );
+          _rememberOrbitFocusTarget(freshOrbitResult);
           _showActionMessage('JPLから軌道要素を取得し、Stellariumへ表示しました。');
           break;
 
@@ -366,21 +505,24 @@ class _HomeScreenState extends State<HomeScreen> {
           setState(() {
             _isRaDecTracking = false;
           });
-          _showActionMessage('RA/Dec追尾を停止しました。');
+          _showActionMessage('高精度表示を終了しました。');
           break;
 
         case 'Stellarium表示':
-          if (_isRaDecTracking) {
-            _showActionMessage('RA/Dec追尾中です。先に追尾を停止してください。');
-            return;
-          }
-          await _apiService.showOrbit(
+          await _stopTrackingBeforeOrbitDisplay();
+          final savedOrbitResult = await _apiService.showOrbit(
             identifier: identifier,
             referenceDateTimeUtc: _toApiDateTimeUtc(
               _orbitReferenceDateTime,
             ),
             fetchMode: 'never',
+            showNameLabel: _showOrbitName,
+            observerName: _observerName,
+            latitudeDeg: _observerLatitude,
+            longitudeDeg: _observerLongitude,
+            altitudeM: _observerAltitude,
           );
+          _rememberOrbitFocusTarget(savedOrbitResult);
           _showActionMessage('登録済みのJPL軌道要素でStellariumへ表示しました。');
           break;
       }
@@ -426,6 +568,11 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         toolbarHeight: 48,
         actions: [
+          IconButton(
+            onPressed: _editMarkerStyle,
+            icon: const Icon(Icons.settings_outlined),
+            tooltip: 'マーカー設定',
+          ),
           Padding(
             padding: const EdgeInsets.only(right: 12),
             child: _BackendStatusChip(
@@ -463,11 +610,18 @@ class _HomeScreenState extends State<HomeScreen> {
                       _SectionCard(
                         step: '3',
                         title: '条件を設定',
-                        child: AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 180),
-                          child: _displayMode == DisplayMode.orbitalElements
-                              ? _buildOrbitalConditionSection()
-                              : _buildRaDecConditionSection(),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            _buildObserverCard(),
+                            const SizedBox(height: 14),
+                            AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 180),
+                              child: _displayMode == DisplayMode.orbitalElements
+                                  ? _buildOrbitalConditionSection()
+                                  : _buildRaDecConditionSection(),
+                            ),
+                          ],
                         ),
                       ),
                       const SizedBox(height: 12),
@@ -615,17 +769,20 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
   Widget _buildModeSection() {
-    return SegmentedButton<DisplayMode>(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SegmentedButton<DisplayMode>(
       segments: const [
         ButtonSegment(
           value: DisplayMode.orbitalElements,
           icon: Icon(Icons.route),
-          label: Text('軌道要素'),
+          label: Text('通常精度'),
         ),
         ButtonSegment(
           value: DisplayMode.radec,
           icon: Icon(Icons.my_location),
-          label: Text('RA / Dec'),
+          label: Text('高精度'),
         ),
       ],
       selected: {_displayMode},
@@ -634,6 +791,14 @@ class _HomeScreenState extends State<HomeScreen> {
           _displayMode = selection.first;
         });
       },
+        ),
+        const SizedBox(height: 8),
+        Text(
+          _displayMode == DisplayMode.orbitalElements
+              ? '通常精度：JPLの軌道要素からStellariumが位置を計算'
+              : '高精度：JPLの赤経・赤緯からマーカー位置を計算',
+        ),
+      ],
     );
   }
   Widget _buildOrbitalConditionSection() {
@@ -663,8 +828,8 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             SegmentedButton<InputTimeZone>(
               segments: const [
-                ButtonSegment(value: InputTimeZone.jst, label: Text('JST')),
-                ButtonSegment(value: InputTimeZone.utc, label: Text('UTC')),
+                ButtonSegment(value: InputTimeZone.jst, label: Text('JST（日本時間）')),
+                ButtonSegment(value: InputTimeZone.utc, label: Text('UTC（協定世界時）')),
               ],
               selected: {_timeZone},
               onSelectionChanged: (selection) {
@@ -676,18 +841,8 @@ class _HomeScreenState extends State<HomeScreen> {
       ],
     );
   }
-  Widget _buildRaDecConditionSection() {
-    final duration = _radecEndDateTime.difference(_radecStartDateTime);
-    final validOrder = duration > Duration.zero;
-    final withinLimit = duration <= const Duration(hours: 12);
-    final pointCount = validOrder
-        ? (duration.inMilliseconds / 500).floor() + 1
-        : 0;
-    return Column(
-      key: const ValueKey('radec-conditions'),
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Container(
+  Widget _buildObserverCard() {
+    return Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: Colors.white.withValues(alpha: 0.025),
@@ -728,14 +883,25 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ],
           ),
-        ),
-        const SizedBox(height: 14),
+        );
+  }
+  Widget _buildRaDecConditionSection() {
+    final duration = _radecEndDateTime.difference(_radecStartDateTime);
+    final validOrder = duration > Duration.zero;
+    final withinLimit = duration <= const Duration(hours: 12);
+    final pointCount = validOrder
+        ? (duration.inMilliseconds / 500).floor() + 1
+        : 0;
+    return Column(
+      key: const ValueKey('radec-conditions'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
         Align(
           alignment: Alignment.centerLeft,
           child: SegmentedButton<InputTimeZone>(
             segments: const [
-              ButtonSegment(value: InputTimeZone.jst, label: Text('JST')),
-              ButtonSegment(value: InputTimeZone.utc, label: Text('UTC')),
+              ButtonSegment(value: InputTimeZone.jst, label: Text('JST（日本時間）')),
+              ButtonSegment(value: InputTimeZone.utc, label: Text('UTC（協定世界時）')),
             ],
             selected: {_timeZone},
             onSelectionChanged: (selection) {
@@ -830,8 +996,8 @@ class _HomeScreenState extends State<HomeScreen> {
     if (isRaDec) {
       final actionName = _isRaDecTracking ? 'RA/Dec追尾停止' : 'JPL RA/Dec取得';
       final buttonLabel = _isRaDecTracking
-          ? 'RA/Dec追尾を停止'
-          : 'JPLからRA/Decを取得して表示';
+          ? '高精度表示を終了'
+          : 'Stellariumに表示';
       final buttonIcon = _isRaDecTracking
           ? Icons.stop_circle_outlined
           : Icons.cloud_download_outlined;
@@ -868,14 +1034,23 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : const Icon(Icons.cloud_download_outlined),
-          label: const Text('JPLから軌道要素を取得'),
+          label: const Text('新しいデータで表示'),
         );
         final displayButton = OutlinedButton.icon(
           onPressed: canProceed
               ? () => _showPendingAction('Stellarium表示')
               : null,
           icon: const Icon(Icons.open_in_new),
-          label: const Text('Stellariumへ表示'),
+          label: const Text('登録済みデータで表示'),
+        );
+        final reselectButton = OutlinedButton.icon(
+          onPressed: _lastOrbitFocusTarget != null &&
+                  !_isRunningAction &&
+                  !_isRaDecTracking
+              ? _reselectLastOrbitTarget
+              : null,
+          icon: const Icon(Icons.ads_click),
+          label: const Text('天体を再選択（詳細情報を表示）'),
         );
 
         if (narrow) {
@@ -885,14 +1060,23 @@ class _HomeScreenState extends State<HomeScreen> {
               SizedBox(height: 52, child: fetchButton),
               const SizedBox(height: 10),
               SizedBox(height: 52, child: displayButton),
+              const SizedBox(height: 10),
+              SizedBox(height: 48, child: reselectButton),
             ],
           );
         }
-        return Row(
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Expanded(child: SizedBox(height: 52, child: fetchButton)),
-            const SizedBox(width: 10),
-            Expanded(child: SizedBox(height: 52, child: displayButton)),
+            Row(
+              children: [
+                Expanded(child: SizedBox(height: 52, child: fetchButton)),
+                const SizedBox(width: 10),
+                Expanded(child: SizedBox(height: 52, child: displayButton)),
+              ],
+            ),
+            const SizedBox(height: 10),
+            SizedBox(height: 48, child: reselectButton),
           ],
         );
       },

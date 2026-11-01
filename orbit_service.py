@@ -28,6 +28,7 @@ from jpl_to_stel import (
 from observer import ObserverLocation
 from stellarium_service import (
     RaDecMarkerStyle,
+    clear_orbit_object_label,
     clear_radec_markers,
     focus_object,
     get_stellarium_datetime_utc,
@@ -35,6 +36,7 @@ from stellarium_service import (
     set_fov_deg,
     set_observer_location,
     set_time,
+    show_orbit_object_label,
     set_view_radec_icrf,
     show_radec_marker,
     start_stellarium,
@@ -273,17 +275,33 @@ def display_prepared_target(
     prepared: PreparedTarget,
     dt: datetime,
     fov_deg: float = 30,
+    observer: ObserverLocation | None = None,
+    show_name_label: bool = True,
 ) -> DisplayResult:
     if prepared.catalog_changed:
         restart_stellarium()
     else:
         start_stellarium()
 
+    if observer is not None:
+        set_observer_location(observer)
+        verify_observer_location(observer)
     set_time(dt)
     time.sleep(1)
     focus_object(prepared.focus_target)
     time.sleep(1)
     set_fov_deg(fov_deg)
+
+    # 選択状態とは別に天体そのものへ名前を紐付ける。
+    # 高精度用のRA/Decマーカーとは混在させない。
+    if prepared.source == "jpl" and show_name_label:
+        show_orbit_object_label(
+            object_name=prepared.display_name,
+            fallback_object_name=prepared.focus_target,
+            label=prepared.display_name,
+        )
+    else:
+        clear_orbit_object_label()
 
     return DisplayResult(
         source=prepared.source,
@@ -305,6 +323,8 @@ def show_jpl_target(
     fetch_mode: FetchMode | str = FetchMode.AUTO,
     display_name: str | None = None,
     fov_deg: float = 30,
+    observer: ObserverLocation | None = None,
+    show_name_label: bool = True,
 ) -> DisplayResult:
     prepared = prepare_jpl_target(
         identifier=identifier,
@@ -312,7 +332,11 @@ def show_jpl_target(
         fetch_mode=fetch_mode,
         display_name=display_name,
     )
-    return display_prepared_target(prepared, dt, fov_deg)
+    return display_prepared_target(
+        prepared, dt, fov_deg,
+        observer=observer,
+        show_name_label=show_name_label,
+    )
 
 
 def show_standard_target(
@@ -417,6 +441,7 @@ def _display_radec_marker_position(
         label=identity.default_display_name,
         style=marker_style,
     )
+    clear_orbit_object_label()
 
 
 def display_jpl_radec_target(
@@ -603,6 +628,9 @@ def track_jpl_radec_series(
     last_simulation_time = displayed.datetime_utc
     last_position_time: datetime | None = displayed.datetime_utc
     marker_visible = True
+    # Labels fade in over about 1 second in Stellarium; refresh separately.
+    last_label_refresh_wall = time.monotonic()
+    label_refresh_interval_seconds = 1.2
     update_count = 0
     end_reason: TrackingEndReason | None = None
 
@@ -640,12 +668,21 @@ def track_jpl_radec_series(
                             position.dec_deg,
                         )
 
+                    now_wall = time.monotonic()
+                    refresh_label = (
+                        not marker_visible
+                        or now_wall - last_label_refresh_wall
+                        >= label_refresh_interval_seconds
+                    )
                     show_radec_marker(
                         ra_deg=position.ra_deg,
                         dec_deg=position.dec_deg,
                         label=displayed.identity.default_display_name,
                         style=marker_style,
+                        refresh_label=refresh_label,
                     )
+                    if refresh_label:
+                        last_label_refresh_wall = now_wall
 
                     marker_visible = True
                     update_count += 1

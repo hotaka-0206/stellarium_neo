@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 
 from fastapi import FastAPI, Request
 from fastapi.encoders import jsonable_encoder
@@ -9,6 +10,7 @@ from app_errors import ApplicationError
 from app_service import StellariumNeoService
 from observer import ObserverLocation
 from orbit_service import DEFAULT_RADEC_TRACK_UPDATE_INTERVAL_SECONDS
+from stellarium_service import RaDecMarkerStyle
 # ============================================================
 # FastAPI Application
 # ============================================================
@@ -55,6 +57,14 @@ class OrbitShowRequest(BaseModel):
     fetch_mode: str = "auto"
     display_name: str | None = None
     fov_deg: float = 30.0
+    observer: ObserverRequest | None = None
+    show_name_label: bool = True
+
+
+class OrbitReselectRequest(BaseModel):
+    """Previously displayed Stellarium object; no JPL lookup needed."""
+
+    focus_target: str
 
 
 class RaDecFetchRequest(BaseModel):
@@ -64,6 +74,9 @@ class RaDecFetchRequest(BaseModel):
     start_datetime: datetime
     end_datetime: datetime
     observer: ObserverRequest
+    marker_type: Literal[
+        "square", "dashed-square", "cross", "target", "dotted-circle"
+    ] = "square"
 
 
 class TrackingStartRequest(BaseModel):
@@ -74,6 +87,9 @@ class TrackingStartRequest(BaseModel):
         DEFAULT_RADEC_TRACK_UPDATE_INTERVAL_SECONDS
     )
     follow_view: bool = False
+    marker_type: Literal[
+        "square", "dashed-square", "cross", "target", "dotted-circle"
+    ] = "square"
 # ============================================================
 # Error Handler
 # ============================================================
@@ -148,18 +164,35 @@ def show_orbit(request: OrbitShowRequest):
     - never: 既に登録済みのJPL版を再取得せず表示する
     """
 
+    observer = None
+    if request.observer is not None:
+        observer = ObserverLocation(
+            latitude_deg=request.observer.latitude_deg,
+            longitude_deg=request.observer.longitude_deg,
+            altitude_m=request.observer.altitude_m,
+            name=request.observer.name,
+        )
     result = app_service.show_jpl_orbit_target(
         identifier=request.identifier,
         dt=request.reference_datetime,
         fetch_mode=request.fetch_mode,
         display_name=request.display_name,
         fov_deg=request.fov_deg,
+        observer=observer,
+        show_name_label=request.show_name_label,
     )
 
     return {
         "success": True,
         "data": jsonable_encoder(result),
     }
+@app.post("/api/orbit/reselect")
+def reselect_orbit(request: OrbitReselectRequest):
+    """Restore object selection without changing the clock or camera."""
+    result = app_service.reselect_orbit_target(request.focus_target)
+    return {"success": True, "data": result}
+
+
 # ============================================================
 # RA/DEC
 # ============================================================
@@ -193,6 +226,7 @@ def fetch_radec(request: RaDecFetchRequest):
         end_dt=request.end_datetime,
         observer=observer,
         display_start=True,
+        marker_style=RaDecMarkerStyle(marker_type=request.marker_type),
     )
     return {
         "success": True,
@@ -263,6 +297,7 @@ def start_tracking(request: TrackingStartRequest):
         session_id=request.session_id,
         update_interval_seconds=request.update_interval_seconds,
         follow_view=request.follow_view,
+        marker_style=RaDecMarkerStyle(marker_type=request.marker_type),
     )
 
     return {

@@ -54,7 +54,7 @@ LABEL_SIDES = frozenset({"N", "S", "E", "W", "NE", "NW", "SE", "SW"})
 
 @dataclass(frozen=True)
 class RaDecMarkerStyle:
-    marker_type: str = "circled-cross"
+    marker_type: str = "square"
     marker_size_px: float = 14.0
     color: str = "#ffcc00"
     label_font_size_px: float = 16.0
@@ -441,6 +441,23 @@ def focus_object(
     )
 
 
+def select_object_without_moving_view(
+    focus_target: str,
+    retry: int = 3,
+    interval: float = 0.2,
+) -> None:
+    """Select an existing Stellarium object; do not alter time or camera."""
+    target = focus_target.strip()
+    if not target:
+        raise ValueError("再選択する天体名を指定してください。")
+    _post_with_retry(
+        endpoint="/main/focus",
+        data={"target": target, "mode": "mark"},
+        retry=retry,
+        interval=interval,
+    )
+
+
 def set_view_radec_icrf(
     ra_deg: float,
     dec_deg: float,
@@ -547,6 +564,8 @@ def run_stellarium_script(
 
 _MANAGED_MARKER_ID_KEY = "__stellariumNeoRaDecMarkerId"
 _MANAGED_LABEL_ID_KEY = "__stellariumNeoRaDecLabelId"
+_MANAGED_ORBIT_LABEL_ID_KEY = "__stellariumNeoOrbitObjectLabelId"
+_MANAGED_PREVIOUS_LABEL_ID_KEY = "__stellariumNeoRaDecPreviousLabelId"
 
 
 def _managed_script_root_line() -> str:
@@ -556,17 +575,95 @@ def _managed_script_root_line() -> str:
     )
 
 
+def build_orbit_object_label_script(
+    object_name: str,
+    label: str,
+    fallback_object_name: str | None = None,
+) -> str:
+    """天体に結び付く常設ラベルを作成。既存ラベルは成功後にのみ削除する。"""
+    object_name = object_name.strip()
+    label = label.strip()
+    if not object_name or not label:
+        raise ValueError("表示する天体の名前とラベルは空にできません。")
+    object_js = json.dumps(object_name, ensure_ascii=False)
+    label_js = json.dumps(label, ensure_ascii=False)
+    fallback_js = json.dumps(
+        (fallback_object_name or "").strip(), ensure_ascii=False
+    )
+    lines = [
+        _managed_script_root_line(),
+        (
+            "var neoOrbitNewLabelId = LabelMgr.labelObject("
+            f"{label_js}, {object_js}, true, 16, "
+            '"#ffcc00", "NE", 36, "Line", false, 0);'
+        ),
+    ]
+    if fallback_object_name and fallback_object_name.strip() != object_name:
+        lines.append(
+            "if (neoOrbitNewLabelId <= 0) { "
+            "neoOrbitNewLabelId = LabelMgr.labelObject("
+            f"{label_js}, {fallback_js}, true, 16, "
+            '"#ffcc00", "NE", 36, "Line", false, 0); }'
+        )
+    lines.extend([
+        (
+            'if (neoOrbitNewLabelId <= 0) '
+            'throw new Error("Stellarium object label could not be created");'
+        ),
+        (
+            f"if (typeof neoRoot.{_MANAGED_ORBIT_LABEL_ID_KEY} === 'number' "
+            f"&& neoRoot.{_MANAGED_ORBIT_LABEL_ID_KEY} > 0) {{ "
+            f"LabelMgr.deleteLabel(neoRoot.{_MANAGED_ORBIT_LABEL_ID_KEY}); }}"
+        ),
+        f"neoRoot.{_MANAGED_ORBIT_LABEL_ID_KEY} = neoOrbitNewLabelId;",
+    ])
+    return "\n".join(lines)
+
+
+def show_orbit_object_label(
+    object_name: str,
+    label: str,
+    fallback_object_name: str | None = None,
+) -> None:
+    run_stellarium_script(build_orbit_object_label_script(
+        object_name=object_name,
+        label=label,
+        fallback_object_name=fallback_object_name,
+    ))
+
+
+def build_clear_orbit_object_label_script() -> str:
+    return "\n".join([
+        _managed_script_root_line(),
+        (
+            f"if (typeof neoRoot.{_MANAGED_ORBIT_LABEL_ID_KEY} === 'number' "
+            f"&& neoRoot.{_MANAGED_ORBIT_LABEL_ID_KEY} > 0) {{ "
+            f"LabelMgr.deleteLabel(neoRoot.{_MANAGED_ORBIT_LABEL_ID_KEY}); "
+            f"neoRoot.{_MANAGED_ORBIT_LABEL_ID_KEY} = -1; }}"
+        ),
+    ])
+
+
+def clear_orbit_object_label() -> None:
+    # Stellarium Neoが作成した通常精度ラベルだけを削除する。
+    run_stellarium_script(build_clear_orbit_object_label_script())
+
+
 def build_radec_marker_script(
     ra_deg: float,
     dec_deg: float,
     label: str,
     style: RaDecMarkerStyle | None = None,
+    refresh_label: bool = True,
 ) -> str:
-    marker_label = label.strip()
+    """Update the marker often; refresh label at a separate, slower cadence.
 
+    Stellarium labels fade in over about 1 second. Keeping the old label until
+    the next label refresh prevents the name from flashing each tracking tick.
+    """
+    marker_label = label.strip()
     if not marker_label:
         raise ValueError("マーカーの表示名が空です。")
-
     marker_style = style or RaDecMarkerStyle()
     ra_text = degrees_to_ra_text(ra_deg)
     dec_text = degrees_to_dec_text(dec_deg)
@@ -575,29 +672,21 @@ def build_radec_marker_script(
     color_literal = json.dumps(marker_style.color)
     label_side_literal = json.dumps(marker_style.label_side)
 
-    return "\n".join(
-        [
-            _managed_script_root_line(),
+    lines = [
+        _managed_script_root_line(),
+        (
+            "var neoNewMarkerId = MarkerMgr.markerEquatorial("
+            f'"{ra_text}", "{dec_text}", '
+            f"true, true, {marker_type_literal}, {color_literal}, "
+            f"{marker_style.marker_size_px}, false, 0, false);"
+        ),
+        ('if (neoNewMarkerId <= 0) '
+         'throw new Error("RA/DEC marker creation failed");'),
+    ]
+    if refresh_label:
+        lines.extend([
             (
-                f"if (typeof neoRoot.{_MANAGED_MARKER_ID_KEY} === 'number' "
-                f"&& neoRoot.{_MANAGED_MARKER_ID_KEY} > 0) {{ "
-                f"MarkerMgr.deleteMarker(neoRoot.{_MANAGED_MARKER_ID_KEY}); }}"
-            ),
-            (
-                f"if (typeof neoRoot.{_MANAGED_LABEL_ID_KEY} === 'number' "
-                f"&& neoRoot.{_MANAGED_LABEL_ID_KEY} > 0) {{ "
-                f"LabelMgr.deleteLabel(neoRoot.{_MANAGED_LABEL_ID_KEY}); }}"
-            ),
-            (
-                f"neoRoot.{_MANAGED_MARKER_ID_KEY} = "
-                "MarkerMgr.markerEquatorial("
-                f'"{ra_text}", "{dec_text}", '
-                f"true, true, {marker_type_literal}, {color_literal}, "
-                f"{marker_style.marker_size_px}, false, 0, false);"
-            ),
-            (
-                f"neoRoot.{_MANAGED_LABEL_ID_KEY} = "
-                "LabelMgr.labelEquatorial("
+                "var neoNewLabelId = LabelMgr.labelEquatorial("
                 f"{label_literal}, "
                 f'"{ra_text}", "{dec_text}", '
                 f"true, {marker_style.label_font_size_px}, "
@@ -605,12 +694,37 @@ def build_radec_marker_script(
                 f"{marker_style.label_distance_px}, false, 0, true);"
             ),
             (
-                f"if (neoRoot.{_MANAGED_MARKER_ID_KEY} < 0 "
-                f"|| neoRoot.{_MANAGED_LABEL_ID_KEY} < 0) {{ "
-                'throw new Error("RA/DEC marker creation failed"); }'
+                'if (neoNewLabelId <= 0) { '
+                'MarkerMgr.deleteMarker(neoNewMarkerId); '
+                'throw new Error("RA/DEC label creation failed"); }'
             ),
-        ]
-    )
+        ])
+
+    lines.extend([
+        (
+            f"if (typeof neoRoot.{_MANAGED_MARKER_ID_KEY} === 'number' "
+            f"&& neoRoot.{_MANAGED_MARKER_ID_KEY} > 0) {{ "
+            f"MarkerMgr.deleteMarker(neoRoot.{_MANAGED_MARKER_ID_KEY}); }}"
+        ),
+        f"neoRoot.{_MANAGED_MARKER_ID_KEY} = neoNewMarkerId;",
+    ])
+
+    if refresh_label:
+        lines.extend([
+            (
+                f"if (typeof neoRoot.{_MANAGED_PREVIOUS_LABEL_ID_KEY} === 'number' "
+                f"&& neoRoot.{_MANAGED_PREVIOUS_LABEL_ID_KEY} > 0) {{ "
+                f"LabelMgr.deleteLabel(neoRoot.{_MANAGED_PREVIOUS_LABEL_ID_KEY}); }}"
+            ),
+            (
+                f"neoRoot.{_MANAGED_PREVIOUS_LABEL_ID_KEY} = "
+                f"(typeof neoRoot.{_MANAGED_LABEL_ID_KEY} === 'number') "
+                f"? neoRoot.{_MANAGED_LABEL_ID_KEY} : -1;"
+            ),
+            f"neoRoot.{_MANAGED_LABEL_ID_KEY} = neoNewLabelId;",
+        ])
+
+    return "\n".join(lines)
 
 
 def show_radec_marker(
@@ -618,12 +732,14 @@ def show_radec_marker(
     dec_deg: float,
     label: str,
     style: RaDecMarkerStyle | None = None,
+    refresh_label: bool = True,
 ) -> None:
     script_code = build_radec_marker_script(
         ra_deg=ra_deg,
         dec_deg=dec_deg,
         label=label,
         style=style,
+        refresh_label=refresh_label,
     )
     run_stellarium_script(script_code)
 
@@ -643,6 +759,12 @@ def build_clear_radec_marker_script() -> str:
                 f"&& neoRoot.{_MANAGED_LABEL_ID_KEY} > 0) {{ "
                 f"LabelMgr.deleteLabel(neoRoot.{_MANAGED_LABEL_ID_KEY}); "
                 f"neoRoot.{_MANAGED_LABEL_ID_KEY} = -1; }}"
+            ),
+            (
+                f"if (typeof neoRoot.{_MANAGED_PREVIOUS_LABEL_ID_KEY} === 'number' "
+                f"&& neoRoot.{_MANAGED_PREVIOUS_LABEL_ID_KEY} > 0) {{ "
+                f"LabelMgr.deleteLabel(neoRoot.{_MANAGED_PREVIOUS_LABEL_ID_KEY}); "
+                f"neoRoot.{_MANAGED_PREVIOUS_LABEL_ID_KEY} = -1; }}"
             ),
         ]
     )

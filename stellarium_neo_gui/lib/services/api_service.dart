@@ -93,6 +93,11 @@ class ApiService {
     String fetchMode = 'auto',
     String? displayName,
     double fovDeg = 30,
+    required String observerName,
+    required double latitudeDeg,
+    required double longitudeDeg,
+    required double altitudeM,
+    bool showNameLabel = true,
   }) async {
     final data = await _requestJson(
       method: 'POST',
@@ -103,10 +108,28 @@ class ApiService {
         'fetch_mode': fetchMode,
         'display_name': displayName,
         'fov_deg': fovDeg,
+        'show_name_label': showNameLabel,
+        'observer': {
+          'name': observerName,
+          'latitude_deg': latitudeDeg,
+          'longitude_deg': longitudeDeg,
+          'altitude_m': altitudeM,
+        },
       },
       timeout: const Duration(seconds: 90),
     );
     return _requireDataMap(data, '軌道要素の表示結果');
+  }
+
+  Future<Map<String, dynamic>> reselectOrbit({
+    required String focusTarget,
+  }) async {
+    final data = await _requestJson(
+      method: 'POST',
+      path: '/api/orbit/reselect',
+      body: {'focus_target': focusTarget},
+    );
+    return _requireDataMap(data, '天体の再選択結果');
   }
 
   Future<Map<String, dynamic>> fetchRaDec({
@@ -117,6 +140,7 @@ class ApiService {
     required double latitudeDeg,
     required double longitudeDeg,
     required double altitudeM,
+    String markerType = 'square',
   }) async {
     final data = await _requestJson(
       method: 'POST',
@@ -131,6 +155,7 @@ class ApiService {
           'longitude_deg': longitudeDeg,
           'altitude_m': altitudeM,
         },
+        'marker_type': markerType,
       },
       timeout: const Duration(minutes: 3),
     );
@@ -141,6 +166,7 @@ class ApiService {
     String? sessionId,
     double updateIntervalSeconds = 0.1,
     bool followView = false,
+    String markerType = 'square',
   }) async {
     final data = await _requestJson(
       method: 'POST',
@@ -149,6 +175,7 @@ class ApiService {
         'session_id': sessionId,
         'update_interval_seconds': updateIntervalSeconds,
         'follow_view': followView,
+        'marker_type': markerType,
       },
     );
     return _requireDataMap(data, '追尾開始結果');
@@ -160,6 +187,14 @@ class ApiService {
       path: '/api/tracking/stop',
     );
     return _requireDataMap(data, '追尾停止結果');
+  }
+
+  Future<Map<String, dynamic>> getTrackingStatus() async {
+    final data = await _requestJson(
+      method: 'GET',
+      path: '/api/tracking/status',
+    );
+    return _requireDataMap(data, '追尾状態');
   }
 
   Map<String, dynamic> _requireDataMap(
