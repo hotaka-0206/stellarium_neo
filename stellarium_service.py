@@ -8,6 +8,10 @@ from datetime import datetime, timezone
 
 import requests
 
+from stellarium_config_service import (
+    apply_stellarium_initial_settings,
+    is_stellarium_process_running,
+)
 from observer import ObserverLocation
 
 BASE_URL = "http://localhost:8090/api"
@@ -205,6 +209,27 @@ def start_stellarium() -> None:
     if is_stellarium_running():
         return
 
+    if platform.system() == "Windows":
+        # APIが無応答でも、Stellarium本体が起動中なら二重起動しない。
+        try:
+            if is_stellarium_process_running():
+                raise StellariumError(
+                    "Stellariumは起動中ですがRemote Controlに接続できません。"
+                    "Stellariumを終了してから再実行してください。"
+                )
+        except (OSError, subprocess.CalledProcessError) as error:
+            raise StellariumError(
+                "Stellariumの起動状態を確認できませんでした。"
+            ) from error
+
+        result = apply_stellarium_initial_settings(stellarium_exe_path=STELLARIUM_PATH)
+        if not result.get("success"):
+            raise StellariumError(
+                "Stellariumの初期設定に失敗しました: "
+                + result.get("message", result.get("code", "不明なエラー"))
+            )
+
+    # 以降は既存の起動処理を維持する。
     try:
         subprocess.Popen([STELLARIUM_PATH])
     except OSError as error:
