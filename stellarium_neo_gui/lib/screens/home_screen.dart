@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/api_service.dart';
+import '../widgets/observer_map_picker.dart';
 
 enum DisplayMode { orbitalElements, radec }
 
@@ -261,6 +262,23 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
+    setState(() {
+      _observerName = result.name;
+      _observerLatitude = result.latitude;
+      _observerLongitude = result.longitude;
+      _observerAltitude = result.altitude;
+    });
+  }
+
+  Future<void> _pickObserverFromMap() async {
+    final result = await showDialog<ObserverMapSelection>(
+      context: context,
+      builder: (_) => ObserverMapPicker(
+        initialLatitude: _observerLatitude,
+        initialLongitude: _observerLongitude,
+      ),
+    );
+    if (!mounted || result == null) return;
     setState(() {
       _observerName = result.name;
       _observerLatitude = result.latitude;
@@ -876,10 +894,21 @@ class _HomeScreenState extends State<HomeScreen> {
                   ],
                 ),
               ),
-              OutlinedButton.icon(
-                onPressed: _editObserver,
-                icon: const Icon(Icons.edit_location_alt_outlined),
-                label: const Text('変更'),
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: _editObserver,
+                    icon: const Icon(Icons.edit_location_alt_outlined),
+                    label: const Text('数値入力'),
+                  ),
+                  const SizedBox(height: 6),
+                  OutlinedButton.icon(
+                    onPressed: _pickObserverFromMap,
+                    icon: const Icon(Icons.map_outlined),
+                    label: const Text('地図・現在地'),
+                  ),
+                ],
               ),
             ],
           ),
