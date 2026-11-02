@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from typing import Callable, TypeVar
 
 from app_errors import ApplicationError, application_error_from_exception
+from jpl_info_overlay import clear_jpl_info_overlay
 from observer import ObserverLocation
 from orbit_service import (
     DEFAULT_RADEC_TRACK_UPDATE_INTERVAL_SECONDS,
@@ -228,6 +229,7 @@ class StellariumNeoService:
 
         try:
             clear_radec_marker()
+            clear_jpl_info_overlay()
         except Exception:
             # Stellariumが未起動でもメモリ上のセッションは消せるようにする。
             pass

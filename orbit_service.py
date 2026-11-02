@@ -26,6 +26,10 @@ from jpl_to_stel import (
     save_to_stellarium,
 )
 from observer import ObserverLocation
+from jpl_info_overlay import (
+    show_jpl_info_overlay,
+    clear_jpl_info_overlay,
+)
 from stellarium_service import (
     RaDecMarkerStyle,
     clear_orbit_object_label,
@@ -442,6 +446,9 @@ def _display_radec_marker_position(
         style=marker_style,
     )
     clear_orbit_object_label()
+    show_jpl_info_overlay(
+        identity.default_display_name, ra_deg, dec_deg, dt, observer,
+    )
 
 
 def display_jpl_radec_target(
@@ -631,6 +638,8 @@ def track_jpl_radec_series(
     # Labels fade in over about 1 second in Stellarium; refresh separately.
     last_label_refresh_wall = time.monotonic()
     label_refresh_interval_seconds = 1.2
+    last_info_refresh_wall = time.monotonic()
+    info_refresh_interval_seconds = 1.0
     update_count = 0
     end_reason: TrackingEndReason | None = None
 
@@ -650,6 +659,7 @@ def track_jpl_radec_series(
             if position is None:
                 if marker_visible:
                     clear_radec_markers()
+                    clear_jpl_info_overlay()
                     marker_visible = False
                 last_simulation_time = current_dt
             else:
@@ -684,6 +694,21 @@ def track_jpl_radec_series(
                     if refresh_label:
                         last_label_refresh_wall = now_wall
 
+                    # Update numbers more slowly than the RA/Dec marker.
+                    if (
+                        not marker_visible
+                        or now_wall - last_info_refresh_wall
+                        >= info_refresh_interval_seconds
+                    ):
+                        show_jpl_info_overlay(
+                            displayed.identity.default_display_name,
+                            position.ra_deg,
+                            position.dec_deg,
+                            position.datetime_utc,
+                            displayed.observer,
+                        )
+                        last_info_refresh_wall = now_wall
+
                     marker_visible = True
                     update_count += 1
                     last_position_time = position.datetime_utc
@@ -703,10 +728,17 @@ def track_jpl_radec_series(
                 clear_radec_markers()
             except Exception:
                 pass
+            try:
+                clear_jpl_info_overlay()
+            except Exception:
+                pass
         raise
 
     if clear_marker_on_exit:
-        clear_radec_markers()
+        try:
+            clear_radec_markers()
+        finally:
+            clear_jpl_info_overlay()
 
     if end_reason is None:
         end_reason = TrackingEndReason.STOP_REQUESTED
