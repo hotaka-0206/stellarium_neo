@@ -20,7 +20,8 @@ Stellarium公式サイトを開きます。
 
 を選択してください。
 
-2026年9月時点のStellarium最新版は **26.2** で、ダウンロードされるインストーラーは次のファイルです。
+2026年9月時点のStellarium最新版は **26.2** ですが、サイトで提供されている最新版を選択してください。
+ダウンロードされるインストーラーは次のファイルです。
 
 `stellarium-26.2-qt6-win64.exe`
 
@@ -70,30 +71,24 @@ ARM版Windows PCの場合は通常版とは異なるため、
 
 ## 2. プログラムをダウンロードする
 
-GitHubのこのリポジトリを開きます。
-https://github.com/hotaka-0206/stellarium_neo/releases/tag/v0.1.0-test
+以下のGitHub Releaseページにアクセスしてください。
 
-現在のテスト版では、
+https://github.com/hotaka-0206/stellarium_neo/releases/latest
 
-**Windows test build**
-
-を使用します。
-
-Releaseページの **Assets** を開き、Windows用のZIPファイルをダウンロードしてください。
+Releaseページの「Assets」から、Windows用のZIPファイルをダウンロードしてください。
 
 ![Stellariumのダウンロード](images/Windows/02_stellarium_download.png)
 
+例：`StellariumNeo-Windows-v0.2.0.zip`
+
+※ バージョン番号は更新によって変わる場合があります。
+
 ### Source codeは使用しない
 
-Assetsには、
+Assetsには、Windows用の配布ファイルのほかに、
+Source code (zip)やSource code (tar.gz)があります。
 
-* Windows用の配布ファイル
-* Source code (zip)
-* Source code (tar.gz)
-
-などが表示されます。
-
-`Source code` ではなく、**Windows用として配布されているZIPファイル**をダウンロードしてください。
+必ずWindows用の配布ZIPファイルをダウンロードしてください。
 
 ---
 
@@ -121,80 +116,29 @@ ZIPファイルをダブルクリックすると中のファイルを見るこ�
 
 ---
 
-## 4. StellariumのRemote Controlを有効にする
+## 4. Stellariumの初期設定について
 
-Stellariumを起動します。
+本アプリでは、Stellariumの初期設定を自動で行います。
 
-全画面表示からウィンドウ表示に戻したい場合は、
+従来必要だったRemote Controlプラグインの有効化や、
+ポート番号の設定を手動で行う必要はありません。
 
-`F11`
+本アプリからStellariumを起動する際に、以下の設定を自動で適用します。
 
-を押します。
+- Remote Controlプラグインの有効化
+- Remote Controlの自動起動
+- ポート番号を8090に設定
+- フルスクリーン表示の無効化
 
-PCによっては、
+### 初回起動時の注意
 
-`Fn + F11`
+すでにStellariumが起動している場合は、
+一度終了してから本アプリを使用してください。
 
-を押す必要があります。
+Stellariumの設定は、本アプリからStellariumを
+起動する際に適用されます。
 
----
-
-### 4-1. Remote Controlプラグインを有効にする
-
-Stellarium上で `F2` キーを押します。
-
-設定画面が開いたら、
-
-1. **「プラグイン」** を選択する
-2. 一覧から **「リモートコントロール」** を選択する
-3. **「起動時に実行」** にチェックを入れる
-
-という順番で操作します。
-
-![Stellariumのダウンロード](images/Windows/04_stellarium_download.png)
-
----
-
-### 4-2. 「設定」ボタンが押せない場合
-
-初めてRemote Controlを有効にした場合、**「設定」ボタンが押せない状態になっている場合があります。**
-
-その場合は、
-
-1. **「起動時に実行」** にチェックが入っていることを確認する
-2. Stellariumを終了する
-3. Stellariumをもう一度起動する
-4. `F2` を押す
-5. 「プラグイン」→「リモートコントロール」を開く
-
-という操作を行ってください。
-
-再起動後はRemote Controlプラグインが読み込まれ、**「設定」ボタンを押せるようになります。**
-
-「設定」ボタンが最初から押せる場合は、そのまま次へ進んで構いません。
-
----
-
-### 4-3. Remote Controlを設定する
-
-**「設定」** を押します。
-
-Remote Controlの設定画面で、次の項目を有効にします。
-
-* **サーバーが利用可能**
-* **起動時に自動的に有効にする**
-
-ポート番号は、
-
-`8090`
-
-にします。
-
-設定後、**「設定を保存」** を押します。
-
-![Stellariumのダウンロード](images/Windows/05_stellarium_download.png)
-
-設定が完了したら、一度Stellariumを終了して、もう一度起動してください。
+設定ファイルを手動で編集する必要はありません。
 
 ---
 
@@ -250,7 +194,7 @@ Remote Controlの設定画面で、次の項目を有効にします。
 
 ## 8. 動作確認
 
-Stellariumを起動した状態で、プログラムから天体を検索します。
+Stellariumが起動していない状態でプログラムから天体を検索します。
 
 例としてApophisを使用する場合は、
 
@@ -283,12 +227,12 @@ Remote Controlの **「起動時に実行」** にチェックを入れたあと
 
 次の項目を確認してください。
 
-1. Stellariumが起動している
-2. Remote Controlの「起動時に実行」が有効
-3. 「サーバーが利用可能」が有効
-4. 「起動時に自動的に有効にする」が有効
-5. ポート番号が `8090`
-6. Remote Controlの設定後にStellariumを再起動している
+1. Stellariumが終了した状態で本アプリから起動すること
+2. Remote Controlの「起動時に実行」が有効であること
+3. 「サーバーが利用可能」が有効であること
+4. 「起動時に自動的に有効にする」が有効であること
+5. ポート番号が `8090`に設定されていること
+6. Remote Controlの設定後にStellariumを再起動していること
 
 ---
 
