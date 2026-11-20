@@ -72,7 +72,7 @@ class _StellariumNeoAppState extends State<StellariumNeoApp>
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Stellarium Neo',
+      title: 'Astelock',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),

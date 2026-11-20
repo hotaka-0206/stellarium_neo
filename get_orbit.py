@@ -11,6 +11,13 @@ from observer import ObserverLocation
 HORIZONS_API_URL = "https://ssd.jpl.nasa.gov/api/horizons.api"
 SBDB_API_URL = "https://ssd-api.jpl.nasa.gov/sbdb.api"
 
+JPL_HEADERS = {
+    "User-Agent": (
+        "Astelock/0.2.0 "
+        "(contact: https://github.com/hotaka-0206/stellarium_neo)"
+    )
+}
+
 JAPANESE_ALIASES = {
     "アポフィス": "Apophis",
     "ケレス": "Ceres",
@@ -225,7 +232,12 @@ def resolve_small_body(identifier: str) -> TargetIdentity:
         params = {"sstr": normalized, "phys-par": "1", "no-orbit": "1"}
 
     try:
-        response = requests.get(SBDB_API_URL, params=params, timeout=30)
+        response = requests.get(
+            SBDB_API_URL,
+            params=params,
+            headers=JPL_HEADERS,
+            timeout=30,
+        )
     except requests.exceptions.RequestException as error:
         raise JplApiError(f"JPL SBDB APIへの接続に失敗しました: {error}") from error
 
@@ -300,8 +312,9 @@ def _request_horizons_text(
 ) -> str:
     try:
         response = requests.get(
-            HORIZONS_API_URL,
+        HORIZONS_API_URL,
             params=params,
+            headers=JPL_HEADERS,
             timeout=timeout_seconds,
         )
         response.raise_for_status()
