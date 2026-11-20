@@ -1,0 +1,64 @@
+﻿Astelock 第三者ソフトウェア・サービスに関する通知
+
+Astelockは、第三者が開発・提供するソフトウェア、ライブラリ、データおよび外部サービスを利用しています。
+
+各制作物の著作権その他の権利は、それぞれの権利者に帰属します。Astelockの利用規約は、第三者のライセンスにより認められる利用・改変・再配布等の権利を制限しません。
+
+1. Flutter・Dart関連
+
+AstelockのGUIはFlutterおよびDartを使用しています。
+
+Flutterエンジン、Dartパッケージおよび関連する第三者コンポーネントのライセンス・著作権表示については、同梱の FLUTTER_NOTICES.txt を参照してください。
+
+2. Python関連
+
+AstelockのバックエンドはPythonを使用し、FastAPI、Uvicorn、Requests、Pydantic等のライブラリを利用しています。
+
+Pythonパッケージのライセンス・著作権表示については、同梱の PYTHON_NOTICES.txt を参照してください。
+
+Python本体にはPython Software Foundation License等が適用されます。
+
+PyInstallerにはGPLおよびBootloader Exception等が適用されます。PyInstallerによって生成された実行ファイルに関しては、当該例外規定に従います。
+
+3. Stellarium
+
+AstelockはStellariumのRemote Control機能を使用します。
+
+Stellariumは第三者が開発・提供するソフトウェアであり、Astelockとは独立しています。Stellariumの利用にはStellarium側のライセンスが適用されます。
+
+https://stellarium.org/
+
+4. NASA/JPL
+
+Astelockは、NASA Jet Propulsion Laboratory（JPL）のHorizonsおよびSmall-Body Databaseから天体情報を取得します。
+
+- JPL Horizons：https://ssd.jpl.nasa.gov/horizons/
+- JPL SBDB：https://ssd-api.jpl.nasa.gov/doc/sbdb.html
+
+AstelockはNASA/JPLの公式製品ではなく、NASA/JPLによる承認、提携または保証を意味しません。
+
+5. OpenStreetMap
+
+地図表示にはOpenStreetMapの地図データおよびタイルサービスを利用する場合があります。
+
+© OpenStreetMap contributors
+
+https://www.openstreetmap.org/copyright
+
+地図データやタイルには、それぞれのライセンスおよび利用ポリシーが適用されます。
+
+6. OpenTopoData
+
+観測地点の標高情報の取得にOpenTopoDataを利用します。
+
+https://www.opentopodata.org/
+
+取得する標高データには、使用されるデータセットごとの権利・出典・利用条件が適用される場合があります。
+
+7. ライセンスの適用範囲
+
+本通知は、Astelock自身のプログラムに対し、第三者のライセンスを適用するものではありません。
+
+各第三者コンポーネントには、それぞれの権利者が定める条件が優先して適用されます。
+
+本通知と個別のライセンス本文に相違がある場合、対象の第三者コンポーネントについては、そのライセンス本文をご確認ください。
