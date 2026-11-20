@@ -14,7 +14,7 @@ DefaultGroupName=Astelock
 UninstallDisplayIcon={app}\{#MyAppExeName}
 
 OutputDir=Output
-OutputBaseFilename=Astelock-Setup-v0.2.0-test
+OutputBaseFilename=Astelock-Setup-v0.2.0
 
 Compression=lzma2
 SolidCompression=yes
