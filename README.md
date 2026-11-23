@@ -1,5 +1,11 @@
 # Astelock
 
+
+**公式サイト：https://hotaka-0206.github.io/stellarium_neo/**
+
+Astelockの機能紹介、Windows版ダウンロード、インストール手順は公式サイトから確認できます。
+
+
 **Astelock**は、NASA JPL Horizonsから取得した小惑星のデータをStellariumに反映し、天体の表示位置を検証するためのWindows向けアプリケーションです。
 
 卒業研究の成果物として開発しており、特に地球へ接近する小惑星について、Stellarium標準の表示とJPL Horizonsのデータを比較し、表示精度の向上を目指しています。
