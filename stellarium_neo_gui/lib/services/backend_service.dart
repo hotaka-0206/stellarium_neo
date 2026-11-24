@@ -104,8 +104,15 @@ class BackendService {
     process.kill();
   }
 
+  
   File _findBackendExecutable() {
     final appDirectory = File(Platform.resolvedExecutable).parent;
+
+    if (Platform.isMacOS) {
+      return File(
+        '${appDirectory.path}/stellarium_neo_backend',
+      );
+    }
 
     final executableName = Platform.isWindows
         ? 'stellarium_neo_backend.exe'
@@ -117,6 +124,7 @@ class BackendService {
       '${Platform.pathSeparator}$executableName',
     );
   }
+
 
   Future<bool> _isHealthy() async {
     try {
