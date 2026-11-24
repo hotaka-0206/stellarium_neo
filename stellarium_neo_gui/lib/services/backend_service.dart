@@ -72,7 +72,7 @@ class BackendService {
     }
 
     // Uvicornの起動完了を待つ。
-    for (var i = 0; i < 30; i++) {
+    for (var i = 0; i < (Platform.isMacOS ? 150 : 30); i++) {
       if (await _isHealthy()) {
         return const BackendStartResult(
           success: true,

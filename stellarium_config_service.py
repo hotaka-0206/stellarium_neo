@@ -1,6 +1,7 @@
 
 import csv
 import os
+import sys
 import re
 import shutil
 import subprocess
@@ -101,6 +102,18 @@ def update_stellarium_config_text(text: str) -> str:
 
 
 def is_stellarium_process_running() -> bool:
+    if sys.platform == "darwin":
+        result = subprocess.run(
+            ["pgrep", "-u", str(os.getuid()), "-ix", "stellarium"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode not in (0, 1):
+            raise subprocess.CalledProcessError(
+                result.returncode, result.args
+            )
+        return result.returncode == 0
+
     result = subprocess.run(
         [
             "tasklist",
@@ -126,15 +139,20 @@ def apply_stellarium_initial_settings(
     stellarium_exe_path: str | Path | None = None,
     default_config_path: str | Path | None = None,
 ) -> dict:
-    """Windowsの既存・初回設定を適用する。GUIから扱える辞書を返す。"""
-    if os.name != "nt":
+    """Windows・macOSの既存・初回設定を適用する。GUIから扱える辞書を返す。"""
+    if os.name != "nt" and sys.platform != "darwin":
         return {
             "success": False,
             "code": "UNSUPPORTED_OS",
-            "message": "現在はWindowsのみ対応しています。",
+            "message": "現在はWindowsとmacOSに対応しています。",
         }
 
-    if config_path is None:
+    if config_path is None and sys.platform == "darwin":
+        path = (
+            Path.home() / "Library" / "Application Support"
+            / "Stellarium" / "config.ini"
+        )
+    elif config_path is None:
         appdata = os.environ.get("APPDATA")
         if not appdata:
             return {
@@ -159,7 +177,13 @@ def apply_stellarium_initial_settings(
                 if stellarium_exe_path is not None
                 else r"C:\Program Files\Stellarium\stellarium.exe"
             )
-            default_path = exe.parent / "data" / "default_cfg.ini"
+            if sys.platform == "darwin":
+                default_path = (
+                    exe.parent.parent / "Resources"
+                    / "data" / "default_cfg.ini"
+                )
+            else:
+                default_path = exe.parent / "data" / "default_cfg.ini"
 
         if not default_path.is_file():
             return {

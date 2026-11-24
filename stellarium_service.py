@@ -25,12 +25,29 @@ class StellariumApiError(StellariumError):
     pass
 
 
+
 def get_stellarium_exe_path() -> str:
     if platform.system() == "Windows":
         return r"C:\Program Files\Stellarium\stellarium.exe"
+
     if platform.system() == "Darwin":
-        return "/Applications/Stellarium.app/Contents/MacOS/Stellarium"
+        from pathlib import Path
+
+        candidates = [
+            Path.home() / "Applications/Stellarium.app",
+            Path("/Applications/Stellarium.app"),
+        ]
+
+        for app in candidates:
+            for name in ("stellarium", "Stellarium"):
+                exe = app / "Contents" / "MacOS" / name
+                if exe.is_file():
+                    return str(exe)
+
+        return "/Applications/Stellarium.app/Contents/MacOS/stellarium"
+
     return "stellarium"
+
 
 
 STELLARIUM_PATH = get_stellarium_exe_path()
@@ -209,7 +226,7 @@ def start_stellarium() -> None:
     if is_stellarium_running():
         return
 
-    if platform.system() == "Windows":
+    if platform.system() in ("Windows", "Darwin"):
         # APIが無応答でも、Stellarium本体が起動中なら二重起動しない。
         try:
             if is_stellarium_process_running():
@@ -237,7 +254,7 @@ def start_stellarium() -> None:
             f"Stellariumを起動できませんでした: {STELLARIUM_PATH}"
         ) from error
 
-    for _ in range(40):
+    for _ in range(120 if platform.system() == "Darwin" else 40):
         if is_stellarium_running():
             return
         time.sleep(0.5)

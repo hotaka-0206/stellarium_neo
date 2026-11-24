@@ -116,7 +116,7 @@ class ApiService {
           'altitude_m': altitudeM,
         },
       },
-      timeout: const Duration(seconds: 90),
+      timeout: const Duration(seconds: 180),
     );
     return _requireDataMap(data, '軌道要素の表示結果');
   }
